@@ -4,7 +4,7 @@ Represents the core `problems` table in PostgreSQL with support for
 DSA, ML, and Cybersecurity challenge types via type-specific metadata.
 """
 
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any
 
 from sqlmodel import Field, SQLModel, Column
@@ -61,10 +61,10 @@ class Problem(SQLModel, table=True):
 
     # Timestamps
     created_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc)
+        default_factory=datetime.utcnow
     )
     updated_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc)
+        default_factory=datetime.utcnow
     )
 
     # Creator (will link to Auth Service in Phase 2)
