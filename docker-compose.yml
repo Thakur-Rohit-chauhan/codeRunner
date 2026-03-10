@@ -2,6 +2,9 @@
 # Universal Contest Platform - Docker Compose
 # ===================================================
 # Phase 1: PostgreSQL + NGINX + Problem Service
+# Phase 2: RabbitMQ + Submission Service
+# Phase 3: gRPC on Problem Service
+# Phase 4: Judge-Standard Consumer Worker
 #
 # CRITICAL: Append only — never remove services from
 # previous phases. Future phases add new services below.
@@ -135,6 +138,34 @@ services:
     networks:
       - platform-network
     restart: unless-stopped
+
+  # ---------------------------------------------------
+  # Phase 4: Judge-Standard Consumer Worker
+  # ---------------------------------------------------
+  judge-standard:
+    build:
+      context: ./services/judge-standard
+      dockerfile: Dockerfile
+    container_name: platform-judge-standard
+    environment:
+      DATABASE_URL: ${SUBMISSION_DATABASE_URL}
+      RABBITMQ_URL: ${RABBITMQ_URL:-amqp://guest:guest@rabbitmq:5672/}
+      PROBLEM_SERVICE_GRPC: problem-service:50051
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      SERVICE_NAME: judge-standard
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      problem-service:
+        condition: service_healthy
+    networks:
+      - platform-network
+    restart: unless-stopped
+    # No ports — headless background worker
+    # No healthcheck — not an HTTP service
 
 # ---------------------------------------------------
 # Volumes
