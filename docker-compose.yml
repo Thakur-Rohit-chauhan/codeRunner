@@ -32,7 +32,7 @@ services:
       - platform-network
 
   # ---------------------------------------------------
-  # Phase 1: Problem Service (FastAPI + asyncpg)
+  # Phase 1+3: Problem Service (FastAPI + asyncpg + gRPC)
   # ---------------------------------------------------
   problem-service:
     build:
@@ -45,8 +45,10 @@ services:
       ENVIRONMENT: ${ENVIRONMENT:-development}
       SERVICE_NAME: problem-service
       SERVICE_PORT: "8001"
+      GRPC_PORT: "${GRPC_PORT:-50051}"
     ports:
       - "8001:8001"
+      - "50051:50051"
     depends_on:
       postgres:
         condition: service_healthy

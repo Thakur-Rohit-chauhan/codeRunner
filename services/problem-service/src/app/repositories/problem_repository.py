@@ -11,6 +11,7 @@ from sqlmodel import select
 
 from app.logger import get_logger
 from app.models.problem import Problem
+from app.models.test_case import TestCase
 
 logger = get_logger(__name__)
 
@@ -159,3 +160,27 @@ class ProblemRepository:
         result = await session.execute(statement)
         count = result.scalar_one()
         return count > 0
+
+    async def get_test_cases(
+        self, session: AsyncSession, problem_id: int
+    ) -> list[TestCase]:
+        """Fetch all non-deleted test cases for a problem, ordered by test_order.
+
+        Args:
+            session: Active async database session.
+            problem_id: The problem's primary key.
+
+        Returns:
+            List of TestCase instances ordered by test_order ascending.
+        """
+        statement = (
+            select(TestCase)
+            .where(
+                TestCase.problem_id == problem_id,
+                TestCase.is_deleted == False,  # noqa: E712
+            )
+            .order_by(TestCase.test_order.asc())
+        )
+        result = await session.execute(statement)
+        return list(result.scalars().all())
+

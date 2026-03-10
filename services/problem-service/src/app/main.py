@@ -1,12 +1,16 @@
 """FastAPI application entry point for Problem Service.
 
-Configures lifespan events (database init/close), exception handlers,
-CORS middleware, and router registration.
+Configures lifespan events (database init/close, gRPC server),
+exception handlers, CORS middleware, and router registration.
+
+Phase 3: Runs both FastAPI REST (port 8001) and gRPC (port 50051)
+from the same async event loop.
 """
 
 from contextlib import asynccontextmanager
 from collections.abc import AsyncIterator
 from datetime import datetime, timezone
+import asyncio
 
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
@@ -30,25 +34,64 @@ from app.logger import setup_logging, get_logger
 setup_logging()
 logger = get_logger(__name__)
 
+# Global references for gRPC cleanup
+_grpc_server = None
+_grpc_task = None
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Application lifespan managing startup and shutdown events.
 
-    Startup: initializes database tables and connection pool.
-    Shutdown: closes database connections gracefully.
+    Startup: initializes database tables, starts gRPC server.
+    Shutdown: stops gRPC server, closes database connections.
     """
+    global _grpc_server, _grpc_task
+
     logger.info(
         "Starting %s v%s (env=%s)",
         settings.SERVICE_NAME,
         __version__,
         settings.ENVIRONMENT,
     )
+
+    # Initialize database (creates tables for Problem + TestCase)
     await init_db()
     logger.info(
         "Database connected (pool_size=%d)", settings.DATABASE_POOL_SIZE
     )
+
+    # Start gRPC server in background task
+    from app.grpc_server.server import GrpcServer
+    from app.grpc_server.servicer import ProblemServicer
+
+    servicer = ProblemServicer()
+    _grpc_server = GrpcServer(
+        host=settings.GRPC_HOST,
+        port=settings.GRPC_PORT,
+    )
+    _grpc_task = asyncio.create_task(_grpc_server.start(servicer))
+
+    logger.info("FastAPI running on :%d", settings.SERVICE_PORT)
+    logger.info("gRPC running on :%d", settings.GRPC_PORT)
+
     yield
+
+    # Shutdown
+    logger.info("Shutting down %s...", settings.SERVICE_NAME)
+
+    # Stop gRPC server
+    if _grpc_server:
+        await _grpc_server.stop()
+
+    # Cancel gRPC background task
+    if _grpc_task:
+        _grpc_task.cancel()
+        try:
+            await _grpc_task
+        except asyncio.CancelledError:
+            pass
+
     await close_db()
     logger.info("%s shutdown complete", settings.SERVICE_NAME)
 

@@ -17,6 +17,10 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = Field(default="info")
     ENVIRONMENT: str = Field(default="development")
 
+    # gRPC
+    GRPC_HOST: str = Field(default="0.0.0.0")
+    GRPC_PORT: int = Field(default=50051)
+
     # Database - PostgreSQL
     DATABASE_URL: str = Field(
         default="postgresql+asyncpg://problem_user:secure_password_change_me@postgres:5432/problems_db",
