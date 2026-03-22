@@ -39,6 +39,7 @@ async def handle_submission_message(message_body: bytes) -> None:
         code: str = body["code"]
         language: str = body["language"]
         user_id: str | None = body.get("user_id")
+        contest_id: int | None = body.get("contest_id")
 
         logger.info(
             "Processing submission %d (problem=%d, lang=%s, user=%s)",
@@ -114,6 +115,8 @@ async def handle_submission_message(message_body: bytes) -> None:
             {
                 "submission_id": submission_id,
                 "problem_id": problem_id,
+                "user_id": user_id,
+                "contest_id": contest_id,
                 "verdict": result["verdict"],
                 "test_passed": result["test_passed"],
                 "test_total": result["test_total"],

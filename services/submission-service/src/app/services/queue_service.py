@@ -44,6 +44,7 @@ class QueueService:
             code=submission.code,
             language=submission.language,
             user_id=submission.user_id,
+            contest_id=submission.contest_id,
             retry_count=submission.retries,
         )
 

@@ -12,6 +12,8 @@ class SubmissionCreate(BaseModel):
     """Schema for POST /api/submissions request body."""
 
     problem_id: int
+    user_id: str | None = None
+    contest_id: int | None = None
     code: str
     language: str
 
@@ -37,6 +39,7 @@ class SubmissionResponse(BaseModel):
     id: int
     problem_id: int
     user_id: str | None = None
+    contest_id: int | None = None
     language: str
     status: str
     verdict: str | None = None
@@ -52,6 +55,7 @@ class SubmissionDetail(BaseModel):
     id: int
     problem_id: int
     user_id: str | None = None
+    contest_id: int | None = None
     code: str
     language: str
     status: str
@@ -76,6 +80,7 @@ class SubmissionListItem(BaseModel):
     id: int
     problem_id: int
     user_id: str | None = None
+    contest_id: int | None = None
     language: str
     status: str
     verdict: str | None = None

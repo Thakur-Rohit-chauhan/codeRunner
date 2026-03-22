@@ -63,6 +63,8 @@ class SubmissionService:
         try:
             submission = Submission(
                 problem_id=data.problem_id,
+                user_id=data.user_id,
+                contest_id=data.contest_id,
                 code=data.code,
                 language=data.language,
                 status="PENDING",

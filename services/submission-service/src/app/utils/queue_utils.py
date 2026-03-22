@@ -11,6 +11,7 @@ def format_judge_message(
     code: str,
     language: str,
     user_id: str | None = None,
+    contest_id: int | None = None,
     retry_count: int = 0,
 ) -> bytes:
     """Format a submission into a RabbitMQ message body.
@@ -21,6 +22,7 @@ def format_judge_message(
         code: The submitted source code.
         language: Programming language of the code.
         user_id: Optional user identifier.
+        contest_id: Optional contest identifier.
         retry_count: Number of retry attempts so far.
 
     Returns:
@@ -30,6 +32,7 @@ def format_judge_message(
         "submission_id": submission_id,
         "problem_id": problem_id,
         "user_id": user_id,
+        "contest_id": contest_id,
         "code": code,
         "language": language,
         "timestamp": datetime.utcnow().isoformat() + "Z",

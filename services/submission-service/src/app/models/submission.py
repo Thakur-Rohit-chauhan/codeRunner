@@ -21,6 +21,7 @@ class Submission(SQLModel, table=True):
     # Core fields
     problem_id: int = Field(index=True)
     user_id: str | None = Field(default=None, max_length=255, index=True)
+    contest_id: int | None = Field(default=None, index=True)
 
     # Code submission
     code: str = Field(sa_column=Column(Text, nullable=False))
