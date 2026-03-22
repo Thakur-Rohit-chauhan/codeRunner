@@ -5,6 +5,7 @@
 # Phase 2: RabbitMQ + Submission Service
 # Phase 3: gRPC on Problem Service
 # Phase 4: Judge-Standard Consumer Worker
+# Phase 5: Redis + Contest Service (Leaderboards)
 #
 # CRITICAL: Append only — never remove services from
 # previous phases. Future phases add new services below.
@@ -78,6 +79,7 @@ services:
     depends_on:
       - problem-service
       - submission-service
+      - contest-service
     networks:
       - platform-network
     restart: unless-stopped
@@ -167,6 +169,60 @@ services:
     # No ports — headless background worker
     # No healthcheck — not an HTTP service
 
+  # ---------------------------------------------------
+  # Phase 5: Redis (Real-Time Leaderboards)
+  # ---------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: platform-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - platform-network
+    restart: unless-stopped
+
+  # ---------------------------------------------------
+  # Phase 5: Contest Service (FastAPI + Redis)
+  # ---------------------------------------------------
+  contest-service:
+    build:
+      context: ./services/contest-service
+      dockerfile: Dockerfile
+    container_name: platform-contest-service
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: ${REDIS_URL:-redis://:@redis:6379/0}
+      RABBITMQ_URL: ${RABBITMQ_URL:-amqp://guest:guest@rabbitmq:5672/}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      SERVICE_NAME: contest-service
+      SERVICE_PORT: "8003"
+    ports:
+      - "8003:8003"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8003/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    networks:
+      - platform-network
+    restart: unless-stopped
+
 # ---------------------------------------------------
 # Volumes
 # ---------------------------------------------------
@@ -174,6 +230,8 @@ volumes:
   postgres_data:
     driver: local
   rabbitmq_data:
+    driver: local
+  redis_data:
     driver: local
 
 # ---------------------------------------------------
