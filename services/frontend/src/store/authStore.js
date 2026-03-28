@@ -16,6 +16,8 @@ const useAuthStore = create((set) => ({
         token: null,
         isAuthenticated: false,
     }),
+    // Update user profile globally
+    updateUser: (newData) => set((state) => ({ user: { ...state.user, ...newData } })),
 
     // Mock login for development
     mockLogin: () => set({

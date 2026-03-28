@@ -223,7 +223,7 @@ export default function Navbar() {
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '1px', padding: '2px 2px 4px' }}>
                                     {[
                                         { Icon: User, label: 'View Profile', onClick: () => { setDropdown(false); navigate(`/profile/${user?.username}`) } },
-                                        { Icon: Settings, label: 'Settings', onClick: () => setDropdown(false) },
+                                        { Icon: Settings, label: 'Settings', onClick: () => { setDropdown(false); navigate('/settings') } },
                                         { Icon: Palette, label: 'Appearance', onClick: () => { setTheme(theme === 'dark' ? 'light' : 'dark'); setDropdown(false); } },
                                     ].map(({ Icon, label, onClick }) => (
                                         <button key={label} onClick={onClick}

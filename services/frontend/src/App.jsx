@@ -6,6 +6,7 @@ import Register from './pages/Register'
 import Problems from './pages/Problems'
 import ProblemSolver from './pages/ProblemSolver'
 import Profile from './pages/Profile'
+import Settings from './pages/Settings'
 
 function ProtectedRoute({ children }) {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
@@ -21,6 +22,7 @@ export default function App() {
       <Route path="/problems" element={<ProtectedRoute><Problems /></ProtectedRoute>} />
       <Route path="/problems/:id" element={<ProtectedRoute><ProblemSolver /></ProtectedRoute>} />
       <Route path="/profile/:username" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+      <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )
