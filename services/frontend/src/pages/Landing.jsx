@@ -210,21 +210,78 @@ const stats = [
     { icon: Trophy, value: 'Live', label: 'Contests' },
 ]
 
+function ConnectionLines() {
+    return (
+        <svg className="absolute inset-0 w-full h-full pointer-events-none z-0 hidden lg:block">
+            <line x1="50%" y1="50%" x2="16%" y2="28%" stroke="rgba(16,185,129,0.3)" strokeWidth="1" />
+            <line x1="50%" y1="50%" x2="84%" y2="26%" stroke="rgba(56,189,248,0.3)" strokeWidth="1" />
+            <line x1="50%" y1="50%" x2="20%" y2="70%" stroke="rgba(56,189,248,0.3)" strokeWidth="1" />
+            <line x1="50%" y1="50%" x2="80%" y2="68%" stroke="rgba(16,185,129,0.3)" strokeWidth="1" />
+        </svg>
+    )
+}
+
 /* ═══════════════════════════════════════════════
    Landing Page
    ═══════════════════════════════════════════════ */
 
 export default function Landing() {
     return (
-        <div className="min-h-screen bg-bg-primary">
-            <Navbar />
+        <div 
+            className="min-h-screen relative overflow-hidden"
+            style={{ backgroundColor: '#161a20' }}
+        >
+            <div className="relative z-50">
+                <Navbar />
+            </div>
+
+            {/* Background Base */}
+            <div className="absolute inset-0" style={{ backgroundColor: '#161a20', zIndex: -2 }}></div>
+
+            {/* ═══ Glowing X-Ray Effects ═══ */}
+            <div className="absolute inset-0 pointer-events-none flex items-center justify-center z-[-1] overflow-hidden">
+                <div
+                    className="absolute"
+                    style={{
+                        width: '150%', height: 40,
+                        background: 'linear-gradient(to right, transparent, #38bdf8, transparent)',
+                        filter: 'blur(40px)', opacity: 0.2,
+                        transform: 'rotate(20deg) translateY(-100px)',
+                    }}
+                />
+                <div
+                    className="absolute"
+                    style={{
+                        width: '200%', height: 120,
+                        background: 'linear-gradient(to right, transparent, #4ade80, transparent)',
+                        filter: 'blur(60px)', opacity: 0.1,
+                        transform: 'rotate(-25deg) translateY(100px)',
+                    }}
+                />
+                <div
+                    className="absolute"
+                    style={{
+                        width: '200%', height: 30,
+                        background: 'linear-gradient(to right, transparent, #4ade80, transparent)',
+                        filter: 'blur(20px)', opacity: 0.2,
+                        transform: 'rotate(-25deg) translateY(100px)',
+                    }}
+                />
+                <div
+                    className="absolute"
+                    style={{
+                        right: '-10%', top: '30%',
+                        width: 500, height: 500,
+                        background: 'radial-gradient(circle, rgba(74,222,128,0.08), transparent)',
+                        borderRadius: '50%', filter: 'blur(150px)',
+                    }}
+                />
+            </div>
+
+            <ConnectionLines />
 
             {/* ══════ Hero Section — Full viewport ══════ */}
-            <section className="relative min-h-[calc(100vh-60px)] flex items-center overflow-hidden">
-                {/* Subtle background glow */}
-                <div className="absolute top-20 right-[30%] w-[500px] h-[500px] bg-green-500/[0.03] rounded-full blur-[120px] pointer-events-none" />
-                <div className="absolute bottom-20 left-[10%] w-[400px] h-[400px] bg-sky-500/[0.02] rounded-full blur-[100px] pointer-events-none" />
-
+            <section className="relative min-h-[calc(100vh-60px)] flex items-center z-10">
                 <div className="relative w-full flex flex-col lg:flex-row items-start gap-10 lg:gap-12 py-12 lg:py-0" style={{ paddingLeft: 'clamp(32px, 6vw, 96px)', paddingRight: 'clamp(32px, 4vw, 64px)' }}>
 
                     {/* ── Left Column: Text Content ── */}
@@ -283,10 +340,21 @@ export default function Landing() {
                                         <div
                                             className={`relative rounded-xl border ${borderColor} px-6 py-6 md:px-8 md:py-8 transition-all duration-300 hover:scale-[1.01]`}
                                             style={{
-                                                background: 'linear-gradient(145deg, rgba(20,20,20,0.95) 0%, rgba(8,8,8,0.98) 100%)',
-                                                boxShadow: glowMap[title] || 'none',
+                                                background: 'linear-gradient(180deg, rgba(30,36,44,0.7) 0%, rgba(20,25,31,0.9) 100%)',
+                                                backdropFilter: 'blur(16px)',
+                                                boxShadow: `0 0 30px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.1), ${glowMap[title] || 'none'}`,
                                             }}
                                         >
+                                            <div
+                                                className="absolute inset-0 pointer-events-none rounded-xl"
+                                                style={{
+                                                    boxShadow: `inset 0 0 90px ${
+                                                        title.includes('COMPETITIVE') ? 'rgba(74,222,128,0.06)' :
+                                                        title.includes('MACHINE') ? 'rgba(56,189,248,0.06)' :
+                                                        'rgba(245,158,11,0.06)'
+                                                    }`,
+                                                }}
+                                            />
                                             {/* Problems Solved / Global Rank badge */}
                                             <div className="absolute top-4 right-5 md:top-5 md:right-6 text-right flex items-start gap-1.5">
                                                 <svg viewBox="0 0 16 16" className="w-3 h-3 mt-0.5 flex-shrink-0" style={{ color: badgeColor, opacity: 0.6 }}>
