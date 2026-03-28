@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
-import { Shield, User, LogOut, Settings, Palette, ChevronDown, BookOpen, BarChart3, Layout, X } from 'lucide-react'
+import { Shield, User, LogOut, Settings, Palette, ChevronDown, BookOpen, BarChart3, Layout, X, Download, Check } from 'lucide-react'
 import useAuthStore from '../../store/authStore'
 import { mockProblems } from '../../utils/mockData'
 
@@ -15,11 +15,17 @@ export default function Navbar() {
     const [isNotesOpen, setIsNotesOpen] = useState(false)
     const [isListsOpen, setIsListsOpen] = useState(false)
     const [notesText, setNotesText] = useState(() => localStorage.getItem('user_notes') || '')
+    const [notesTitle, setNotesTitle] = useState(() => localStorage.getItem('user_notes_title') || 'Personal Notes')
     const [theme, setTheme] = useState(() => localStorage.getItem('app_theme') || 'dark')
+    const [showSavedToast, setShowSavedToast] = useState(false)
 
     useEffect(() => {
         localStorage.setItem('user_notes', notesText)
     }, [notesText])
+
+    useEffect(() => {
+        localStorage.setItem('user_notes_title', notesTitle)
+    }, [notesTitle])
 
     useEffect(() => {
         localStorage.setItem('app_theme', theme)
@@ -29,6 +35,23 @@ export default function Navbar() {
             document.body.classList.remove('light-theme')
         }
     }, [theme])
+
+    const handleSaveNoteToFile = () => {
+        const blob = new Blob([notesText], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${notesTitle.trim() || 'note'}.txt`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    };
+
+    const handleManualSave = () => {
+        setShowSavedToast(true);
+        setTimeout(() => setShowSavedToast(false), 2000);
+    };
 
     useEffect(() => {
         function handleClickOutside(e) {
@@ -281,11 +304,23 @@ export default function Navbar() {
             {/* ═ Notes Editor Modal ═ */}
             {isNotesOpen && (
                 <div style={{ position: 'fixed', inset: 0, zIndex: 100000, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }}>
-                    <div style={{ width: '500px', backgroundColor: '#161a20', borderRadius: '16px', padding: '20px', border: '1px solid rgba(255,255,255,0.08)', boxShadow: '0 20px 50px rgba(0,0,0,0.5)' }}>
+                    <div style={{ width: '500px', backgroundColor: '#161a20', borderRadius: '16px', padding: '20px', border: '1px solid rgba(255,255,255,0.08)', boxShadow: '0 20px 50px rgba(0,0,0,0.5)', display: 'flex', flexDirection: 'column' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                            <h3 style={{ margin: 0, color: '#fff', fontSize: '18px', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 600 }}>
-                                <Layout size={20} className="text-green-400" /> Personal Notes
-                            </h3>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1 }}>
+                                <Layout size={20} className="text-green-400" />
+                                <input
+                                    type="text"
+                                    value={notesTitle}
+                                    onChange={(e) => setNotesTitle(e.target.value)}
+                                    placeholder="Note Title..."
+                                    style={{
+                                        background: 'transparent', border: 'none', color: '#fff', fontSize: '18px', fontWeight: 600, outline: 'none', width: '100%',
+                                        borderBottom: '1px solid transparent', transition: 'border-color 0.2s'
+                                    }}
+                                    onFocus={e => e.currentTarget.style.borderBottomColor = 'rgba(52,211,153,0.5)'}
+                                    onBlur={e => e.currentTarget.style.borderBottomColor = 'transparent'}
+                                />
+                            </div>
                             <button onClick={() => setIsNotesOpen(false)} style={{ color: '#9ca3af', padding: '4px', borderRadius: '8px' }} onMouseEnter={e => e.currentTarget.style.backgroundColor='rgba(255,255,255,0.1)'} onMouseLeave={e => e.currentTarget.style.backgroundColor='transparent'}>
                                 <X size={20} />
                             </button>
@@ -294,8 +329,30 @@ export default function Navbar() {
                             value={notesText}
                             onChange={(e) => setNotesText(e.target.value)}
                             placeholder="Jot down formulas, algorithmic thoughts, or reference links here... They are saved automatically to your device."
-                            style={{ width: '100%', height: '350px', backgroundColor: '#0d1117', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', padding: '16px', color: '#e5e7eb', fontSize: '14px', lineHeight: '1.6', resize: 'none', outline: 'none', fontFamily: 'monospace' }}
+                            style={{ width: '100%', height: '320px', backgroundColor: '#0d1117', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', padding: '16px', color: '#e5e7eb', fontSize: '14px', lineHeight: '1.6', resize: 'none', outline: 'none', fontFamily: 'monospace' }}
                         />
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <button
+                                    onClick={handleManualSave}
+                                    style={{ display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: 'rgba(52,211,153,0.1)', color: '#34d399', border: '1px solid rgba(52,211,153,0.3)', padding: '8px 16px', borderRadius: '8px', fontSize: '13px', fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s' }}
+                                    onMouseEnter={e => e.currentTarget.style.backgroundColor='rgba(52,211,153,0.2)'}
+                                    onMouseLeave={e => e.currentTarget.style.backgroundColor='rgba(52,211,153,0.1)'}
+                                >
+                                    {showSavedToast ? <Check size={16} /> : <Check size={16} opacity={0.6} />}
+                                    {showSavedToast ? 'Saved!' : 'Save'}
+                                </button>
+                                {showSavedToast && <span className="text-xs text-green-400/80 animate-fade-in">Saved to browser storage</span>}
+                            </div>
+                            <button
+                                onClick={handleSaveNoteToFile}
+                                style={{ display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: '#fff', color: '#000', border: 'none', padding: '8px 16px', borderRadius: '8px', fontSize: '13px', fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s' }}
+                                onMouseEnter={e => e.currentTarget.style.backgroundColor='#e5e5e5'}
+                                onMouseLeave={e => e.currentTarget.style.backgroundColor='#fff'}
+                            >
+                                <Download size={16} /> Export File
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}
