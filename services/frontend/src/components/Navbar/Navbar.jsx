@@ -108,9 +108,13 @@ export default function Navbar() {
                             onClick={() => setDropdown(!dropdown)}
                             className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-white/5 transition-colors border border-transparent hover:border-white/10"
                         >
-                            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-green-400 to-emerald-600 flex items-center justify-center text-sm font-bold text-slate-900 shadow-[0_0_10px_rgba(74,222,128,0.3)]">
-                                {user?.displayName?.[0] || 'U'}
-                            </div>
+                            {user?.avatar ? (
+                                <img src={user.avatar} alt="Avatar" className="w-8 h-8 rounded-full object-cover border border-emerald-500/50 shadow-[0_0_10px_rgba(74,222,128,0.2)]" />
+                            ) : (
+                                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-green-400 to-emerald-600 flex items-center justify-center text-sm font-bold text-slate-900 shadow-[0_0_10px_rgba(74,222,128,0.3)]">
+                                    {user?.displayName?.[0] || 'U'}
+                                </div>
+                            )}
                             <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${dropdown ? 'rotate-180' : ''}`} />
                         </button>
 
@@ -142,23 +146,35 @@ export default function Navbar() {
                                     background: 'rgba(255,255,255,0.04)',
                                     border: '1px solid rgba(255,255,255,0.06)',
                                 }}>
-                                    <div style={{
-                                        width: '48px',
-                                        height: '48px',
-                                        borderRadius: '50%',
-                                        background: 'linear-gradient(135deg, #34d399, #059669)',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                        fontSize: '20px',
-                                        fontWeight: 700,
-                                        color: '#0b0f19',
-                                        flexShrink: 0,
-                                        boxShadow: '0 0 16px rgba(52,211,153,0.35)',
-                                        border: '1px solid rgba(52,211,153,0.25)',
-                                    }}>
-                                        {user?.displayName?.[0] || 'U'}
-                                    </div>
+                                    {user?.avatar ? (
+                                        <img src={user.avatar} alt="Large Avatar" style={{
+                                            width: '48px',
+                                            height: '48px',
+                                            borderRadius: '50%',
+                                            objectFit: 'cover',
+                                            flexShrink: 0,
+                                            boxShadow: '0 0 16px rgba(52,211,153,0.35)',
+                                            border: '1px solid rgba(52,211,153,0.3)',
+                                        }} />
+                                    ) : (
+                                        <div style={{
+                                            width: '48px',
+                                            height: '48px',
+                                            borderRadius: '50%',
+                                            background: 'linear-gradient(135deg, #34d399, #059669)',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            fontSize: '20px',
+                                            fontWeight: 700,
+                                            color: '#0b0f19',
+                                            flexShrink: 0,
+                                            boxShadow: '0 0 16px rgba(52,211,153,0.35)',
+                                            border: '1px solid rgba(52,211,153,0.25)',
+                                        }}>
+                                            {user?.displayName?.[0] || 'U'}
+                                        </div>
+                                    )}
                                     <div style={{ minWidth: 0, flex: 1 }}>
                                         <p style={{
                                             fontWeight: 700,
