@@ -40,18 +40,21 @@ export default function Navbar() {
 
             {/* Nav Links — Centered, uppercase */}
             <div className="hidden md:flex items-center gap-6">
-                {navLinks.map(({ to, label }) => (
-                    <Link
-                        key={label}
-                        to={to}
-                        className={`py-2 text-[13px] font-medium tracking-[0.15em] transition-colors ${location.pathname === to
-                            ? 'text-white'
-                            : 'text-[#a1a1aa] hover:text-white'
-                            }`}
-                    >
-                        {label}
-                    </Link>
-                ))}
+                {navLinks.map(({ to, label }) => {
+                    const isActive = (location.pathname + location.search) === to;
+                    return (
+                        <Link
+                            key={label}
+                            to={to}
+                            className={`py-2 text-[13px] font-medium tracking-[0.15em] transition-colors ${isActive
+                                ? 'text-white'
+                                : 'text-[#a1a1aa] hover:text-white'
+                                }`}
+                        >
+                            {label}
+                        </Link>
+                    );
+                })}
             </div>
 
             {/* Auth Buttons */}

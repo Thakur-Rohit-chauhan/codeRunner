@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useEffect } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import { Search, Check, Minus, ChevronLeft, ChevronRight, ArrowUpDown, SlidersHorizontal, BarChart3, Lock, Star, FolderOpen, X, EyeOff, Eye } from 'lucide-react'
 import Navbar from '../components/Navbar/Navbar'
 import { mockProblems } from '../utils/mockData'
@@ -42,8 +42,17 @@ export default function Problems() {
     const sortRef = useRef(null)
     const perPage = 15
 
-    const solvedCount = useMemo(() => mockProblems.filter((p) => p.status === 'solved').length, [])
-    const totalCount = mockProblems.length
+    const location = useLocation()
+    const queryParams = new URLSearchParams(location.search)
+    const urlDomain = queryParams.get('domain')
+
+    const domainProblems = useMemo(() => {
+        if (!urlDomain) return mockProblems
+        return mockProblems.filter(p => p.domain === urlDomain)
+    }, [urlDomain])
+
+    const solvedCount = useMemo(() => domainProblems.filter((p) => p.status === 'solved').length, [domainProblems])
+    const totalCount = domainProblems.length
 
     // Close sort dropdown on outside click
     useEffect(() => {
@@ -73,7 +82,7 @@ export default function Problems() {
     const difficultyOrder = { Easy: 1, Medium: 2, Hard: 3 }
 
     const filtered = useMemo(() => {
-        let result = [...mockProblems]
+        let result = [...domainProblems]
         if (search) result = result.filter((p) => p.title.toLowerCase().includes(search.toLowerCase()))
 
         // Apply advanced filters
@@ -125,7 +134,7 @@ export default function Problems() {
         }
 
         return result
-    }, [search, activeSort, sortDirection, filters, matchStrategy])
+    }, [domainProblems, search, activeSort, sortDirection, filters, matchStrategy])
 
     const totalPages = Math.ceil(filtered.length / perPage)
     const paginated = filtered.slice((page - 1) * perPage, page * perPage)
