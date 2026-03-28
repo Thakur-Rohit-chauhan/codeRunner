@@ -430,7 +430,13 @@ export default function ProblemSolver() {
                                 border: '1px solid rgba(52,211,153,0.3)',
                                 transition: 'box-shadow 0.2s'
                             }}>
-                                {user?.displayName?.[0] || 'U'}
+                                {user?.avatar ? (
+                                <img src={user.avatar} alt="Avatar" className="w-8 h-8 rounded-full object-cover border border-emerald-500/50 shadow-[0_0_10px_rgba(74,222,128,0.2)]" />
+                            ) : (
+                                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-green-400 to-emerald-600 flex items-center justify-center text-sm font-bold text-slate-900 shadow-[0_0_10px_rgba(74,222,128,0.3)]">
+                                    {user?.displayName?.[0] || 'U'}
+                                </div>
+                            )}
                             </div>
                         </button>
 
@@ -452,15 +458,35 @@ export default function ProblemSolver() {
                                     borderRadius: '14px', backgroundColor: 'rgba(255,255,255,0.03)',
                                     border: '1px solid rgba(255,255,255,0.04)',
                                 }}>
-                                    <div style={{
-                                        width: '40px', height: '40px', borderRadius: '50%', flexShrink: 0,
-                                        background: 'linear-gradient(135deg, #34d399, #059669)',
-                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                        fontSize: '16px', fontWeight: 700, color: '#0b0f19',
-                                        boxShadow: '0 0 15px rgba(52,211,153,0.3)', border: '1px solid rgba(52,211,153,0.2)',
-                                    }}>
-                                        {user?.displayName?.[0] || 'U'}
-                                    </div>
+                                    {user?.avatar ? (
+                                        <img src={user.avatar} alt="Large Avatar" style={{
+                                            width: '48px',
+                                            height: '48px',
+                                            borderRadius: '50%',
+                                            objectFit: 'cover',
+                                            flexShrink: 0,
+                                            boxShadow: '0 0 16px rgba(52,211,153,0.35)',
+                                            border: '1px solid rgba(52,211,153,0.3)',
+                                        }} />
+                                    ) : (
+                                        <div style={{
+                                            width: '48px',
+                                            height: '48px',
+                                            borderRadius: '50%',
+                                            background: 'linear-gradient(135deg, #34d399, #059669)',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            fontSize: '20px',
+                                            fontWeight: 700,
+                                            color: '#0b0f19',
+                                            flexShrink: 0,
+                                            boxShadow: '0 0 16px rgba(52,211,153,0.35)',
+                                            border: '1px solid rgba(52,211,153,0.25)',
+                                        }}>
+                                            {user?.displayName?.[0] || 'U'}
+                                        </div>
+                                    )}
                                     <div style={{ minWidth: 0, flex: 1 }}>
                                         <p style={{ fontSize: '13.5px', fontWeight: 600, color: 'rgba(255,255,255,0.9)', marginBottom: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                             {user?.displayName || 'User'}

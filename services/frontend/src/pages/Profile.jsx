@@ -205,17 +205,27 @@ export default function Profile() {
                         {/* Profile Card */}
                         <div style={{ ...glassCard, padding: '28px 24px', textAlign: 'center' }}>
                             {/* Avatar */}
-                            <div style={{
-                                width: '96px', height: '96px', borderRadius: '50%',
-                                margin: '0 auto 16px',
-                                background: 'linear-gradient(135deg, #34d399 0%, #3b82f6 50%, #a78bfa 100%)',
-                                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                fontSize: '36px', fontWeight: 700, color: '#0b0f19',
-                                boxShadow: '0 0 30px rgba(52, 211, 153, 0.2), 0 0 60px rgba(59, 130, 246, 0.1)',
-                                position: 'relative',
-                            }}>
-                                {user.displayName[0]}
-                            </div>
+                            {user.avatar ? (
+                                <img src={user.avatar} alt="Profile" style={{
+                                    width: '96px', height: '96px', borderRadius: '50%',
+                                    margin: '0 auto 16px',
+                                    objectFit: 'cover',
+                                    boxShadow: '0 0 30px rgba(52, 211, 153, 0.2), 0 0 60px rgba(59, 130, 246, 0.1)',
+                                    display: 'block'
+                                }} />
+                            ) : (
+                                <div style={{
+                                    width: '96px', height: '96px', borderRadius: '50%',
+                                    margin: '0 auto 16px',
+                                    background: 'linear-gradient(135deg, #34d399 0%, #3b82f6 50%, #a78bfa 100%)',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    fontSize: '36px', fontWeight: 700, color: '#0b0f19',
+                                    boxShadow: '0 0 30px rgba(52, 211, 153, 0.2), 0 0 60px rgba(59, 130, 246, 0.1)',
+                                    position: 'relative',
+                                }}>
+                                    {user.displayName[0] || 'U'}
+                                </div>
+                            )}
 
                             <h1 style={{ fontSize: '20px', fontWeight: 700, color: '#fff', marginBottom: '4px' }}>{user.displayName}</h1>
                             <p style={{ fontSize: '14px', color: '#6b7280', marginBottom: '4px' }}>@{user.username}</p>
