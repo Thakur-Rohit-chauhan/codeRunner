@@ -60,63 +60,178 @@ export default function Navbar() {
                     <div className="relative" ref={dropdownRef}>
                         <button
                             onClick={() => setDropdown(!dropdown)}
-                            className="flex items-center gap-2 px-3 py-1.5 rounded-lg hover:bg-bg-card transition-colors"
+                            className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-white/5 transition-colors border border-transparent hover:border-white/10"
                         >
-                            <div className="w-7 h-7 rounded-full bg-gradient-to-br from-accent to-accent-teal flex items-center justify-center text-xs font-bold text-bg-primary">
+                            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-green-400 to-emerald-600 flex items-center justify-center text-sm font-bold text-slate-900 shadow-[0_0_10px_rgba(74,222,128,0.3)]">
                                 {user?.displayName?.[0] || 'U'}
                             </div>
-                            <ChevronDown className={`w-3.5 h-3.5 text-text-secondary transition-transform ${dropdown ? 'rotate-180' : ''}`} />
+                            <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${dropdown ? 'rotate-180' : ''}`} />
                         </button>
 
                         {dropdown && (
-                            <div className="absolute right-0 mt-2 w-72 rounded-xl bg-bg-card border border-border shadow-2xl animate-slide-down overflow-hidden">
-                                {/* User info */}
-                                <div className="px-4 py-4 border-b border-border">
-                                    <div className="flex items-center gap-3">
-                                        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-accent to-accent-teal flex items-center justify-center text-sm font-bold text-bg-primary">
-                                            {user?.displayName?.[0] || 'U'}
-                                        </div>
-                                        <div>
-                                            <p className="font-semibold text-text-primary">{user?.displayName}</p>
-                                            <p className="text-xs text-text-secondary">{user?.email}</p>
-                                        </div>
+                            <div
+                                style={{
+                                    position: 'absolute',
+                                    right: 0,
+                                    top: 'calc(100% + 8px)',
+                                    width: '320px',
+                                    borderRadius: '20px',
+                                    border: '1px solid rgba(255,255,255,0.1)',
+                                    background: 'linear-gradient(to bottom, rgba(22,28,36,0.97) 0%, rgba(13,17,23,0.99) 100%)',
+                                    backdropFilter: 'blur(32px)',
+                                    WebkitBackdropFilter: 'blur(32px)',
+                                    boxShadow: '0 24px 48px -12px rgba(0,0,0,0.8), 0 0 24px rgba(52,211,153,0.06)',
+                                    padding: '10px 8px 8px',
+                                    zIndex: 9999,
+                                }}
+                            >
+                                {/* User info card */}
+                                <div style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '14px',
+                                    padding: '14px 16px',
+                                    marginBottom: '8px',
+                                    borderRadius: '14px',
+                                    background: 'rgba(255,255,255,0.04)',
+                                    border: '1px solid rgba(255,255,255,0.06)',
+                                }}>
+                                    <div style={{
+                                        width: '48px',
+                                        height: '48px',
+                                        borderRadius: '50%',
+                                        background: 'linear-gradient(135deg, #34d399, #059669)',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        fontSize: '20px',
+                                        fontWeight: 700,
+                                        color: '#0b0f19',
+                                        flexShrink: 0,
+                                        boxShadow: '0 0 16px rgba(52,211,153,0.35)',
+                                        border: '1px solid rgba(52,211,153,0.25)',
+                                    }}>
+                                        {user?.displayName?.[0] || 'U'}
+                                    </div>
+                                    <div style={{ minWidth: 0, flex: 1 }}>
+                                        <p style={{
+                                            fontWeight: 700,
+                                            color: 'rgba(255,255,255,0.92)',
+                                            fontSize: '15px',
+                                            letterSpacing: '0.01em',
+                                            marginBottom: '3px',
+                                            overflow: 'hidden',
+                                            textOverflow: 'ellipsis',
+                                            whiteSpace: 'nowrap',
+                                        }}>{user?.displayName || 'User'}</p>
+                                        <p style={{
+                                            fontSize: '13px',
+                                            color: 'rgba(156,163,175,0.8)',
+                                            overflow: 'hidden',
+                                            textOverflow: 'ellipsis',
+                                            whiteSpace: 'nowrap',
+                                        }}>{user?.email}</p>
                                     </div>
                                 </div>
+
                                 {/* Quick stats */}
-                                <div className="px-4 py-3 border-b border-border flex items-center gap-4">
-                                    <div className="flex items-center gap-1.5 text-xs text-text-secondary">
-                                        <BookOpen className="w-3.5 h-3.5" /> <span>My Lists</span>
-                                    </div>
-                                    <div className="flex items-center gap-1.5 text-xs text-text-secondary">
-                                        <Layout className="w-3.5 h-3.5" /> <span>Notebook</span>
-                                    </div>
-                                    <div className="flex items-center gap-1.5 text-xs text-text-secondary">
-                                        <BarChart3 className="w-3.5 h-3.5" /> <span>Stats</span>
-                                    </div>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '6px', marginBottom: '8px', padding: '0 2px' }}>
+                                    {[
+                                        { Icon: BookOpen, label: 'Lists' },
+                                        { Icon: Layout, label: 'Notes' },
+                                        { Icon: BarChart3, label: 'Stats' },
+                                    ].map(({ Icon, label }) => (
+                                        <button key={label}
+                                            style={{
+                                                display: 'flex',
+                                                flexDirection: 'column',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                gap: '7px',
+                                                padding: '12px 4px',
+                                                borderRadius: '12px',
+                                                background: 'rgba(255,255,255,0.025)',
+                                                border: '1px solid rgba(255,255,255,0.05)',
+                                                cursor: 'pointer',
+                                                transition: 'all 0.2s',
+                                            }}
+                                            onMouseEnter={e => {
+                                                e.currentTarget.style.background = 'rgba(52,211,153,0.09)'
+                                                e.currentTarget.style.borderColor = 'rgba(52,211,153,0.2)'
+                                            }}
+                                            onMouseLeave={e => {
+                                                e.currentTarget.style.background = 'rgba(255,255,255,0.025)'
+                                                e.currentTarget.style.borderColor = 'rgba(255,255,255,0.05)'
+                                            }}
+                                        >
+                                            <Icon style={{ width: '18px', height: '18px', color: '#6b7280' }} />
+                                            <span style={{ fontSize: '9.5px', fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.07em' }}>{label}</span>
+                                        </button>
+                                    ))}
                                 </div>
+
+                                {/* Divider */}
+                                <div style={{ height: '1px', background: 'rgba(255,255,255,0.06)', margin: '6px 10px 4px' }} />
+
                                 {/* Menu items */}
-                                <div className="py-1">
-                                    <button
-                                        onClick={() => { setDropdown(false); navigate(`/profile/${user?.username}`) }}
-                                        className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-text-secondary hover:text-text-primary hover:bg-bg-panel transition-colors"
-                                    >
-                                        <User className="w-4 h-4" /> View Profile
-                                    </button>
-                                    <button
-                                        className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-text-secondary hover:text-text-primary hover:bg-bg-panel transition-colors"
-                                    >
-                                        <Settings className="w-4 h-4" /> Settings
-                                    </button>
-                                    <button
-                                        className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-text-secondary hover:text-text-primary hover:bg-bg-panel transition-colors"
-                                    >
-                                        <Palette className="w-4 h-4" /> Appearance
-                                    </button>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '1px', padding: '2px 2px 4px' }}>
+                                    {[
+                                        { Icon: User, label: 'View Profile', onClick: () => { setDropdown(false); navigate(`/profile/${user?.username}`) } },
+                                        { Icon: Settings, label: 'Settings', onClick: () => setDropdown(false) },
+                                        { Icon: Palette, label: 'Appearance', onClick: () => setDropdown(false) },
+                                    ].map(({ Icon, label, onClick }) => (
+                                        <button key={label} onClick={onClick}
+                                            style={{
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: '13px',
+                                                width: '100%',
+                                                padding: '10px 14px',
+                                                borderRadius: '11px',
+                                                background: 'none',
+                                                border: 'none',
+                                                cursor: 'pointer',
+                                                fontSize: '14.5px',
+                                                fontWeight: 500,
+                                                color: 'rgba(209,213,219,0.9)',
+                                                transition: 'all 0.15s',
+                                                textAlign: 'left',
+                                                fontFamily: 'inherit',
+                                            }}
+                                            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; e.currentTarget.style.color = '#fff' }}
+                                            onMouseLeave={e => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = 'rgba(209,213,219,0.9)' }}
+                                        >
+                                            <Icon style={{ width: '18px', height: '18px', color: '#9ca3af', flexShrink: 0 }} />
+                                            {label}
+                                        </button>
+                                    ))}
+
+                                    <div style={{ height: '1px', background: 'rgba(255,255,255,0.06)', margin: '6px 8px' }} />
+
                                     <button
                                         onClick={() => { logout(); setDropdown(false); navigate('/') }}
-                                        className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-accent-red hover:bg-bg-panel transition-colors"
+                                        style={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '13px',
+                                            width: '100%',
+                                            padding: '10px 14px',
+                                            borderRadius: '11px',
+                                            background: 'none',
+                                            border: 'none',
+                                            cursor: 'pointer',
+                                            fontSize: '14.5px',
+                                            fontWeight: 500,
+                                            color: '#f87171',
+                                            transition: 'all 0.15s',
+                                            textAlign: 'left',
+                                            fontFamily: 'inherit',
+                                        }}
+                                        onMouseEnter={e => e.currentTarget.style.background = 'rgba(248,113,113,0.09)'}
+                                        onMouseLeave={e => e.currentTarget.style.background = 'none'}
                                     >
-                                        <LogOut className="w-4 h-4" /> Sign Out
+                                        <LogOut style={{ width: '18px', height: '18px', color: 'rgba(248,113,113,0.75)', flexShrink: 0 }} />
+                                        Sign Out
                                     </button>
                                 </div>
                             </div>

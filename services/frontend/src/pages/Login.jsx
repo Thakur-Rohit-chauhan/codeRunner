@@ -98,10 +98,9 @@ function CTFBottomRightDecoration() {
    ═══════════════════════════════════════════════ */
 export default function Login() {
     const [form, setForm] = useState({
-        fullName: '', username: '', email: '', password: '', confirmPassword: '',
+        email: '', password: '',
     })
     const [showPw, setShowPw] = useState(false)
-    const [agreedTerms, setAgreedTerms] = useState(false)
     const { mockLogin } = useAuthStore()
     const navigate = useNavigate()
 
@@ -109,14 +108,11 @@ export default function Login() {
 
     const handleSubmit = (e) => {
         e.preventDefault()
-        if (!form.fullName || !form.username || !form.email || !form.password || !form.confirmPassword) {
+        if (!form.email || !form.password) {
             return toast.error('Please fill in all fields')
         }
-        if (form.password !== form.confirmPassword) {
-            return toast.error('Passwords do not match')
-        }
         mockLogin()
-        toast.success('Account created successfully!')
+        toast.success('Signed in successfully!')
         navigate('/problems')
     }
 
@@ -127,11 +123,8 @@ export default function Login() {
     }
 
     const fields = [
-        { key: 'fullName', type: 'text', placeholder: 'Full Name' },
-        { key: 'username', type: 'text', placeholder: 'Username' },
         { key: 'email', type: 'email', placeholder: 'Email Address' },
-        { key: 'password', type: showPw ? 'text' : 'password', placeholder: 'Password' },
-        { key: 'confirmPassword', type: showPw ? 'text' : 'password', placeholder: 'Confirm Password', hasPwToggle: true },
+        { key: 'password', type: showPw ? 'text' : 'password', placeholder: 'Password', hasPwToggle: true },
     ]
 
     /* ── Inline styles to guarantee exact sizing (Tailwind arbitrary values were not applying) ── */
@@ -269,13 +262,13 @@ export default function Login() {
                                 transform: 'scaleY(1.05)',
                             }}
                         >
-                            JOIN THE UNIFIED PLATFORM
+                            WELCOME BACK
                         </h1>
 
                         {/* Divider 1 */}
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', marginBottom: 24, width: '90%', marginLeft: 'auto', marginRight: 'auto' }}>
                             <div style={dividerLineStyle}></div>
-                            <span style={dividerTextStyle}>Or Sign In With</span>
+                            <span style={dividerTextStyle}>Sign In With</span>
                         </div>
 
                         {/* Google Button */}
@@ -312,7 +305,7 @@ export default function Login() {
                         {/* Divider 2 */}
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', marginBottom: 24 }}>
                             <div style={{ ...dividerLineStyle, width: '95%' }}></div>
-                            <span style={dividerTextStyle}>Or Register Via Email</span>
+                            <span style={dividerTextStyle}>Or Sign In Via Email</span>
                         </div>
 
                         {/* Form Area */}
@@ -368,28 +361,16 @@ export default function Login() {
                                     boxShadow: '0 4px 12px rgba(74,222,128,0.25)',
                                 }}
                             >
-                                Create Your Account
+                                Sign In
                             </button>
                         </form>
 
                         {/* Footer */}
                         <div style={{ marginTop: 28, textAlign: 'center' }}>
                             <p style={{ fontSize: 14, color: '#d1d5db' }}>
-                                Already have an account?{' '}
-                                <Link to="/login" style={{ color: '#34d399', textDecoration: 'none' }}>Log in.</Link>
+                                Don't have an account?{' '}
+                                <Link to="/register" style={{ color: '#34d399', textDecoration: 'none' }}>Register.</Link>
                             </p>
-
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 20 }}>
-                                <input
-                                    type="checkbox"
-                                    checked={agreedTerms}
-                                    onChange={(e) => setAgreedTerms(e.target.checked)}
-                                    style={{ width: 14, height: 14, cursor: 'pointer', accentColor: '#34d399' }}
-                                />
-                                <span style={{ fontSize: 12, color: '#9ca3af' }}>
-                                    I agree to the <a href="#" style={{ color: '#34d399', textDecoration: 'none' }}>Terms of Service</a> and <a href="#" style={{ color: '#34d399', textDecoration: 'none' }}>Privacy Policy</a>
-                                </span>
-                            </div>
                         </div>
 
                     </div>

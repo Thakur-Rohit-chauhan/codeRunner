@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
-import { CheckSquare, Square, ChevronDown, Plus, Minus, X } from 'lucide-react'
+import { CheckSquare, Square, ChevronDown, Plus, Minus } from 'lucide-react'
+import toast from 'react-hot-toast'
 
 // Options for different properties
 const filterOptions = {
@@ -33,15 +34,18 @@ const CustomSelect = ({ value, onChange, options, style, disabled = false, place
                 onClick={() => !disabled && setOpen(!open)}
                 style={{
                     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                    padding: '8px 12px', borderRadius: '8px',
-                    backgroundColor: disabled ? '#2a2a2a' : 'transparent',
-                    border: '1px solid #3e3e3e',
+                    padding: '8px 12px', borderRadius: '10px',
+                    backgroundColor: disabled ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.03)',
+                    border: '1px solid rgba(255,255,255,0.05)',
                     color: disabled ? '#6b7280' : (value ? '#d1d5db' : '#8d96a0'),
                     cursor: disabled ? 'default' : 'pointer',
                     fontSize: '14px',
                     height: '36px',
-                    boxSizing: 'border-box'
+                    boxSizing: 'border-box',
+                    transition: 'all 0.2s'
                 }}
+                onMouseEnter={(e) => { if (!disabled) e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)' }}
+                onMouseLeave={(e) => { if (!disabled) e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.03)' }}
             >
                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {value || placeholder}
@@ -52,9 +56,11 @@ const CustomSelect = ({ value, onChange, options, style, disabled = false, place
             {open && (
                 <div style={{
                     position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 60,
-                    marginTop: '4px', padding: '4px', borderRadius: '8px',
-                    backgroundColor: '#2a2a2a', border: '1px solid #3e3e3e',
-                    boxShadow: '0 4px 20px rgba(0,0,0,0.5)',
+                    marginTop: '6px', padding: '6px', borderRadius: '12px',
+                    background: 'linear-gradient(to bottom, rgba(30,36,44,0.95) 0%, rgba(15,20,25,0.98) 100%)',
+                    backdropFilter: 'blur(24px)',
+                    border: '1px solid rgba(255,255,255,0.1)',
+                    boxShadow: '0 10px 30px -10px rgba(0,0,0,0.8)',
                     maxHeight: '200px', overflowY: 'auto'
                 }}>
                     {options.map((opt) => (
@@ -62,11 +68,13 @@ const CustomSelect = ({ value, onChange, options, style, disabled = false, place
                             key={opt}
                             onClick={() => { onChange(opt); setOpen(false) }}
                             style={{
-                                padding: '8px 12px', borderRadius: '4px', cursor: 'pointer',
-                                color: '#d1d5db', fontSize: '14px',
-                                backgroundColor: value === opt ? '#3e3e3e' : 'transparent',
+                                padding: '8px 12px', borderRadius: '8px', cursor: 'pointer',
+                                color: value === opt ? '#fff' : '#d1d5db', fontSize: '14px',
+                                backgroundColor: value === opt ? 'rgba(255,255,255,0.08)' : 'transparent',
+                                transition: 'all 0.2s',
+                                fontWeight: value === opt ? 500 : 400
                             }}
-                            onMouseEnter={(e) => { if (value !== opt) e.currentTarget.style.backgroundColor = '#333' }}
+                            onMouseEnter={(e) => { if (value !== opt) e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.04)' }}
                             onMouseLeave={(e) => { if (value !== opt) e.currentTarget.style.backgroundColor = 'transparent' }}
                         >
                             {opt}
@@ -130,42 +138,76 @@ export default function FilterPopover({ filters, setFilters, matchStrategy, setM
         setMatchStrategy('All')
     }
 
+    const handleSaveSmartList = () => {
+        const listName = window.prompt("Enter a name for your Smart List:")
+        if (!listName || listName.trim() === '') return // User cancelled or entered empty string
+
+        try {
+            let saved = JSON.parse(localStorage.getItem('smartLists') || '[]')
+            if (!Array.isArray(saved)) {
+                saved = []
+            }
+            saved.push({
+                name: listName.trim(),
+                filters,
+                matchStrategy,
+                createdAt: new Date().toISOString()
+            })
+            localStorage.setItem('smartLists', JSON.stringify(saved))
+            toast.success(`Smart List "${listName.trim()}" saved!`, {
+                style: {
+                    background: '#222',
+                    color: '#fff',
+                    border: '1px solid rgba(255,255,255,0.1)',
+                }
+            })
+            onClose()
+        } catch (error) {
+            console.error("Failed to save Smart List:", error)
+            toast.error("Failed to save Smart List")
+        }
+    }
+
     return (
         <div
             ref={popoverRef}
+            className="animate-slide-down"
             style={{
-                position: 'absolute', top: '48px', right: 0, zIndex: 50,
-                width: '450px', borderRadius: '12px',
-                backgroundColor: '#2a2a2a', border: '1px solid #3e3e3e',
-                boxShadow: '0 12px 40px rgba(0,0,0,0.5)',
-                padding: '20px',
+                position: 'absolute', top: '48px', left: 0, zIndex: 50,
+                width: '460px', borderRadius: '20px',
+                background: 'linear-gradient(to bottom, rgba(30,36,44,0.85) 0%, rgba(15,20,25,0.98) 100%)',
+                backdropFilter: 'blur(32px)',
+                WebkitBackdropFilter: 'blur(32px)',
+                border: '1px solid rgba(255,255,255,0.1)',
+                boxShadow: '0 20px 40px -15px rgba(0,0,0,0.8)',
+                padding: '24px',
                 display: 'flex', flexDirection: 'column', gap: '20px'
             }}
         >
             {/* Header: Match Configuration */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '15px', color: '#fff', fontWeight: 500 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14.5px', color: '#e5e7eb', fontWeight: 500 }}>
                 <span>Match</span>
                 <CustomSelect
                     value={matchStrategy}
                     onChange={setMatchStrategy}
                     options={['All', 'Any']}
-                    style={{ width: '80px' }}
+                    style={{ width: '85px' }}
                 />
-                <span>of the following filters:</span>
+                <span className="text-gray-400">of the following filters:</span>
             </div>
 
             {/* Filter Rows */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                {filters.map((filter, index) => (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                {filters.map((filter) => (
                     <div key={filter.id} style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                         {/* Checkbox */}
                         <div
                             onClick={() => toggleFilterEnabled(filter.id)}
-                            style={{ cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+                            style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', transition: 'all 0.2s' }}
                         >
                             {filter.enabled ?
-                                <CheckSquare style={{ width: '18px', height: '18px', color: '#8d96a0' }} /> :
-                                <Square style={{ width: '18px', height: '18px', color: '#6b7280' }} />
+                                <CheckSquare style={{ width: '18px', height: '18px', color: '#34d399' }} /> :
+                                <Square style={{ width: '18px', height: '18px', color: 'rgba(255,255,255,0.2)' }} />
                             }
                         </div>
 
@@ -174,7 +216,7 @@ export default function FilterPopover({ filters, setFilters, matchStrategy, setM
                             value={filter.property}
                             onChange={(val) => updateFilter(filter.id, 'property', val)}
                             options={properties}
-                            style={{ width: '120px' }}
+                            style={{ width: '130px' }}
                             disabled={!filter.enabled}
                         />
 
@@ -183,7 +225,7 @@ export default function FilterPopover({ filters, setFilters, matchStrategy, setM
                             value={filter.operator}
                             onChange={(val) => updateFilter(filter.id, 'operator', val)}
                             options={['is', 'is not']}
-                            style={{ width: '80px' }}
+                            style={{ width: '85px' }}
                             disabled={!filter.enabled}
                         />
 
@@ -202,10 +244,13 @@ export default function FilterPopover({ filters, setFilters, matchStrategy, setM
                             disabled={filters.length <= 1}
                             style={{
                                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                background: 'none', border: 'none', padding: 0,
-                                color: filters.length <= 1 ? '#3e3e3e' : '#8d96a0',
-                                cursor: filters.length <= 1 ? 'default' : 'pointer'
+                                background: 'none', border: 'none', padding: '4px', borderRadius: '6px',
+                                color: filters.length <= 1 ? 'rgba(255,255,255,0.1)' : '#9ca3af',
+                                cursor: filters.length <= 1 ? 'default' : 'pointer',
+                                transition: 'all 0.2s'
                             }}
+                            onMouseEnter={(e) => { if (filters.length > 1) { e.currentTarget.style.color = '#ef4444'; e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.1)'; } }}
+                            onMouseLeave={(e) => { if (filters.length > 1) { e.currentTarget.style.color = '#9ca3af'; e.currentTarget.style.backgroundColor = 'transparent'; } }}
                         >
                             <Minus style={{ width: '18px', height: '18px' }} />
                         </button>
@@ -218,37 +263,50 @@ export default function FilterPopover({ filters, setFilters, matchStrategy, setM
                 <button
                     onClick={addFilter}
                     style={{
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        background: 'none', border: 'none', padding: 0,
-                        color: '#8d96a0', cursor: 'pointer'
+                        display: 'flex', alignItems: 'center', gap: '6px',
+                        background: 'transparent', border: '1px solid rgba(255,255,255,0.05)', 
+                        padding: '6px 12px', borderRadius: '8px',
+                        color: '#9ca3af', cursor: 'pointer', fontSize: '13px', fontWeight: 500,
+                        transition: 'all 0.2s'
                     }}
+                    onMouseEnter={(e) => { e.currentTarget.style.color = '#d1d5db'; e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)' }}
+                    onMouseLeave={(e) => { e.currentTarget.style.color = '#9ca3af'; e.currentTarget.style.backgroundColor = 'transparent' }}
                 >
-                    <Plus style={{ width: '20px', height: '20px' }} />
+                    <Plus style={{ width: '16px', height: '16px' }} /> Add Filter
                 </button>
             </div>
 
             {/* Divider */}
-            <div style={{ height: '1px', backgroundColor: '#3e3e3e', margin: '4px -20px' }}></div>
+            <div style={{ height: '1px', backgroundColor: 'rgba(255,255,255,0.05)', margin: '4px -24px' }}></div>
 
             {/* Footer Buttons */}
             <div style={{ display: 'flex', gap: '12px' }}>
-                <button style={{
-                    flex: 1, padding: '10px', borderRadius: '8px',
-                    backgroundColor: '#352e46', color: '#c49aff',
-                    border: 'none', fontSize: '14px', fontWeight: 500,
-                    cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px'
-                }}>
-                    <div style={{ width: '14px', height: '14px', borderRadius: '50%', border: '1.5px solid currentColor' }}></div>
+                <button 
+                    onClick={handleSaveSmartList}
+                    style={{
+                    flex: 1, padding: '10px', borderRadius: '10px',
+                    backgroundColor: 'rgba(196, 154, 255, 0.1)', color: '#d8b4fe',
+                    border: '1px solid rgba(196, 154, 255, 0.2)', fontSize: '14px', fontWeight: 500,
+                    cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                    transition: 'all 0.2s'
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(196, 154, 255, 0.15)' }}
+                onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'rgba(196, 154, 255, 0.1)' }}
+                >
+                    <div style={{ width: '12px', height: '12px', borderRadius: '50%', border: '1.5px solid currentColor' }}></div>
                     Save as Smart List
                 </button>
                 <button
                     onClick={resetFilters}
                     style={{
-                        flex: 1, padding: '10px', borderRadius: '8px',
-                        backgroundColor: '#333', color: '#fff',
-                        border: 'none', fontSize: '14px', fontWeight: 500,
-                        cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px'
+                        flex: 1, padding: '10px', borderRadius: '10px',
+                        backgroundColor: 'rgba(255,255,255,0.03)', color: '#d1d5db',
+                        border: '1px solid rgba(255,255,255,0.05)', fontSize: '14px', fontWeight: 500,
+                        cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                        transition: 'all 0.2s'
                     }}
+                    onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.06)' }}
+                    onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.03)' }}
                 >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path>
