@@ -1,11 +1,20 @@
-import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
-import { Link, useParams, useNavigate } from 'react-router-dom'
+import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react'
+import { Link, useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { Panel, Group, Separator } from 'react-resizable-panels'
 import Editor from '@monaco-editor/react'
-import { ArrowLeft, ChevronLeft, ChevronRight, Shuffle, Play, Pause, Square, Upload, Clock, Settings, Check, X, Tag, Code2, FileText, MessageSquare, History, Maximize2, Minimize2, RotateCcw, RotateCw, Terminal, Bookmark, Star, ThumbsUp, MessageCircle, ExternalLink, Lightbulb, ChevronUp, Search, ArrowUpDown, SlidersHorizontal, User, LogOut, Palette, BarChart3, Layout, BookOpen, ChevronDown } from 'lucide-react'
+import { ArrowLeft, ChevronLeft, ChevronRight, Shuffle, Play, Pause, Square, Upload, Clock, Settings, Check, X, Tag, Code2, FileText, MessageSquare, History, Maximize2, Minimize2, RotateCcw, RotateCw, Terminal, Bookmark, Star, ThumbsUp, MessageCircle, ExternalLink, Lightbulb, ChevronUp, Search, ArrowUpDown, SlidersHorizontal, User, LogOut, Palette, BarChart3, Layout, BookOpen, ChevronDown, Filter, EyeOff, Plus, Minus } from 'lucide-react'
 import useAuthStore from '../store/authStore'
 import { getProblemDetail, mockProblems } from '../utils/mockData'
 import toast from 'react-hot-toast'
+
+const COLORS = {
+    bgMain: '#0b0f19',
+    bgCard: '#1e242c',
+    bgHover: '#2a323c',
+    border: 'rgba(255,255,255,0.08)',
+    textMain: '#e5e7eb',
+    textMuted: '#9ca3af',
+}
 
 const languages = [
     { key: 'cpp', label: 'C++', monaco: 'cpp' },
@@ -36,6 +45,10 @@ const diffBg = {
 export default function ProblemSolver() {
     const { id } = useParams()
     const navigate = useNavigate()
+    const [searchParams] = useSearchParams()
+    const topicParam = searchParams.get('topic')
+    const listParam = searchParams.get('list')
+    
     const { user } = useAuthStore()
     const problem = useMemo(() => getProblemDetail(id) || getProblemDetail(1), [id])
 
@@ -81,14 +94,105 @@ export default function ProblemSolver() {
     const profileDropdownRef = useRef(null)
     const editorRef = useRef(null)
 
-    const solvedCount = useMemo(() => mockProblems.filter(p => p.status === 'solved').length, [])
+    // Determine the list of problems based on topic or list context
+    const contextProblems = useMemo(() => {
+        if (listParam === 'bookmarks') return mockProblems.filter(p => p.starred)
+        if (topicParam) return mockProblems.filter(p => (p.tags || []).includes(decodeURIComponent(topicParam)))
+        return mockProblems
+    }, [topicParam, listParam])
+
+    const solvedCount = useMemo(() => contextProblems.filter(p => p.status === 'solved').length, [contextProblems])
+    
+    // Advanced Sort & Filter State for Sidebar
+    const [sortConfig, setSortConfig] = useState({ key: 'custom', direction: 'asc' })
+    const [filterMatchMode, setFilterMatchMode] = useState('All')
+    const [filterRules, setFilterRules] = useState([])
+    const [isSortMenuOpen, setIsSortMenuOpen] = useState(false)
+    const [isFilterMenuOpen, setIsFilterMenuOpen] = useState(false)
+    
+    // Helper for filter options
+    const FILTER_FIELDS = {
+        'Status': ['Solved', 'Attempted', 'Unsolved'],
+        'Difficulty': ['Easy', 'Medium', 'Hard'],
+        'List': ['Starred', 'Not Starred'],
+    }
+    const FILTER_OPERATORS = ['is', 'is not']
+    
+    const addRule = () => {
+        if (filterRules.length >= 6) return toast.error('Maximum of 6 filter rules allowed')
+        const newId = filterRules.length > 0 ? Math.max(...filterRules.map(r => r.id)) + 1 : 1
+        setFilterRules([...filterRules, { id: newId, active: true, field: 'Status', operator: 'is', value: 'Solved' }])
+    }
+    const updateRule = (id, updates) => setFilterRules(filterRules.map(r => r.id === id ? { ...r, ...updates } : r))
+    const removeRule = id => setFilterRules(filterRules.filter(r => r.id !== id))
+    const resetRules = () => setFilterRules([])
+
     const filteredProblems = useMemo(() => {
-        if (!problemSearch) return mockProblems
-        return mockProblems.filter(p => 
-            p.title.toLowerCase().includes(problemSearch.toLowerCase()) ||
-            String(p.id).includes(problemSearch)
-        )
-    }, [problemSearch])
+        let result = [...contextProblems]
+        if (problemSearch) {
+            const lowerQ = problemSearch.toLowerCase()
+            result = result.filter(p => p.title.toLowerCase().includes(lowerQ) || String(p.id).includes(lowerQ))
+        }
+
+        if (filterRules.length > 0) {
+            const activeRules = filterRules.filter(r => r.active && r.field && r.operator && r.value)
+            if (activeRules.length > 0) {
+                result = result.filter(p => {
+                    const ruleEvals = activeRules.map(rule => {
+                        let fieldVal = ''
+                        if (rule.field === 'Status') {
+                            fieldVal = p.status === 'solved' ? 'Solved' : p.status === 'attempted' ? 'Attempted' : 'Unsolved'
+                        } else if (rule.field === 'Difficulty') {
+                            fieldVal = p.difficulty
+                        } else if (rule.field === 'List') {
+                            fieldVal = p.starred ? 'Starred' : 'Not Starred'
+                        }
+                        if (rule.operator === 'is') return fieldVal === rule.value
+                        if (rule.operator === 'is not') return fieldVal !== rule.value
+                        return true
+                    })
+                    return filterMatchMode === 'All' ? ruleEvals.every(Boolean) : ruleEvals.some(Boolean)
+                })
+            }
+        }
+
+        result.sort((a, b) => {
+            if (sortConfig.key === 'custom') return 0
+            let valA, valB
+            if (sortConfig.key === 'id') {
+                valA = a.id
+                valB = b.id
+            } else if (sortConfig.key === 'acceptance') {
+                valA = parseFloat(a.acceptance) || 0
+                valB = parseFloat(b.acceptance) || 0
+            } else if (sortConfig.key === 'difficulty') {
+                const diffMap = { Easy: 1, Medium: 2, Hard: 3 }
+                valA = diffMap[a.difficulty] || 0
+                valB = diffMap[b.difficulty] || 0
+            } else if (sortConfig.key === 'lastSubmitted') {
+                valA = a.lastSubmitted ? new Date(a.lastSubmitted).getTime() : 0
+                valB = b.lastSubmitted ? new Date(b.lastSubmitted).getTime() : 0
+            }
+            if (valA !== undefined && valB !== undefined) {
+                if (valA < valB) return sortConfig.direction === 'asc' ? -1 : 1
+                if (valA > valB) return sortConfig.direction === 'asc' ? 1 : -1
+            }
+            return 0
+        })
+
+        return result
+    }, [problemSearch, contextProblems, filterRules, filterMatchMode, sortConfig])
+    
+    // Helper to preserve context when navigating
+    const navigateWithContext = (newId) => {
+        if (listParam) {
+            navigate(`/problems/${newId}?list=${listParam}`)
+        } else if (topicParam) {
+            navigate(`/problems/${newId}?topic=${topicParam}`)
+        } else {
+            navigate(`/problems/${newId}`)
+        }
+    }
 
     // Timer
     useEffect(() => {
@@ -295,19 +399,21 @@ export default function ProblemSolver() {
                     <div style={{ width: '1px', height: '16px', backgroundColor: 'rgba(255,255,255,0.08)', margin: '0 4px' }} />
                     {[
                         { icon: ChevronLeft, title: 'Previous problem', onClick: () => {
-                            const idx = mockProblems.findIndex(p => String(p.id) === String(id))
-                            if (idx > 0) navigate(`/problems/${mockProblems[idx - 1].id}`)
-                            else navigate(`/problems/${mockProblems[mockProblems.length - 1].id}`)
+                            const idx = contextProblems.findIndex(p => String(p.id) === String(id))
+                            if (idx > 0) navigateWithContext(contextProblems[idx - 1].id)
+                            else if (contextProblems.length > 0) navigateWithContext(contextProblems[contextProblems.length - 1].id)
                         }},
                         { icon: ChevronRight, title: 'Next problem', onClick: () => {
-                            const idx = mockProblems.findIndex(p => String(p.id) === String(id))
-                            if (idx < mockProblems.length - 1) navigate(`/problems/${mockProblems[idx + 1].id}`)
-                            else navigate(`/problems/${mockProblems[0].id}`)
+                            const idx = contextProblems.findIndex(p => String(p.id) === String(id))
+                            if (idx < contextProblems.length - 1 && idx !== -1) navigateWithContext(contextProblems[idx + 1].id)
+                            else if (contextProblems.length > 0) navigateWithContext(contextProblems[0].id)
                         }},
                         { icon: Shuffle, title: 'Random problem', onClick: () => {
-                            const others = mockProblems.filter(p => String(p.id) !== String(id))
-                            const random = others[Math.floor(Math.random() * others.length)]
-                            navigate(`/problems/${random.id}`)
+                            const others = contextProblems.filter(p => String(p.id) !== String(id))
+                            if (others.length > 0) {
+                                const random = others[Math.floor(Math.random() * others.length)]
+                                navigateWithContext(random.id)
+                            }
                         }},
                     ].map((btn, i) => (
                         <button key={i} onClick={btn.onClick} title={btn.title} style={{
@@ -592,7 +698,9 @@ export default function ProblemSolver() {
                                     borderBottom: '1px solid rgba(255,255,255,0.06)',
                                 }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                        <span style={{ fontSize: '14px', fontWeight: 700, color: '#e5e7eb' }}>Problem List</span>
+                                        <span style={{ fontSize: '14px', fontWeight: 700, color: '#e5e7eb' }}>
+                                            {listParam === 'bookmarks' ? 'Bookmarked Questions' : topicParam ? `${decodeURIComponent(topicParam)} Problems` : 'Problem List'}
+                                        </span>
                                         <ChevronRight style={{ width: '14px', height: '14px', color: '#6b7280' }} />
                                     </div>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -601,7 +709,7 @@ export default function ProblemSolver() {
                                             fontSize: '11.5px', fontWeight: 600, color: '#9ca3af',
                                         }}>
                                             <Check style={{ width: '12px', height: '12px', color: '#34d399' }} />
-                                            {solvedCount}/{mockProblems.length} Solved
+                                            {solvedCount}/{contextProblems.length} Solved
                                         </span>
                                         <button
                                             onClick={() => setShowProblemList(false)}
@@ -619,10 +727,14 @@ export default function ProblemSolver() {
                                     </div>
                                 </div>
 
+                                {(isSortMenuOpen || isFilterMenuOpen) && (
+                                    <div style={{ position: 'fixed', inset: 0, zIndex: 90 }} onClick={() => { setIsSortMenuOpen(false); setIsFilterMenuOpen(false); }} />
+                                )}
+
                                 {/* Search + Filter Row */}
                                 <div style={{
                                     padding: '10px 14px', flexShrink: 0,
-                                    display: 'flex', alignItems: 'center', gap: '8px',
+                                    display: 'flex', alignItems: 'center', gap: '8px', position: 'relative', zIndex: 95
                                 }}>
                                     <div style={{
                                         flex: 1, display: 'flex', alignItems: 'center', gap: '8px',
@@ -641,19 +753,139 @@ export default function ProblemSolver() {
                                             }}
                                         />
                                     </div>
-                                    {[ArrowUpDown, SlidersHorizontal].map((Icon, i) => (
-                                        <button key={i} style={{
-                                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                            width: '30px', height: '30px', borderRadius: '8px',
-                                            backgroundColor: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)',
-                                            color: '#6b7280', cursor: 'pointer', transition: 'all 0.15s', flexShrink: 0,
-                                        }}
-                                        onMouseEnter={(e) => { e.currentTarget.style.color = '#d1d5db'; e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.06)' }}
-                                        onMouseLeave={(e) => { e.currentTarget.style.color = '#6b7280'; e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.03)' }}
-                                        >
-                                            <Icon style={{ width: '13px', height: '13px' }} />
-                                        </button>
-                                    ))}
+                                    {/* Sort & Filter Menus */}
+                                    <div style={{ position: 'relative', display: 'flex', gap: '8px' }}>
+                                        {/* Sort Menu */}
+                                        <div style={{ position: 'relative' }}>
+                                            <button onClick={() => { setIsSortMenuOpen(!isSortMenuOpen); setIsFilterMenuOpen(false); }} style={{
+                                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                width: '30px', height: '30px', borderRadius: '8px',
+                                                backgroundColor: isSortMenuOpen ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.03)',
+                                                border: '1px solid rgba(255,255,255,0.06)',
+                                                color: isSortMenuOpen ? '#3b82f6' : '#6b7280',
+                                                cursor: 'pointer', transition: 'all 0.15s', flexShrink: 0
+                                            }} onMouseEnter={e => { e.currentTarget.style.color = '#d1d5db'; e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.06)' }} onMouseLeave={e => { e.currentTarget.style.color = isSortMenuOpen ? '#3b82f6' : '#6b7280'; e.currentTarget.style.backgroundColor = isSortMenuOpen ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.03)' }}>
+                                                <ArrowUpDown style={{ width: '13px', height: '13px' }} />
+                                                {(sortConfig.key !== 'custom') && (
+                                                    <span style={{ position: 'absolute', top: '2px', right: '2px', width: '6px', height: '6px', backgroundColor: '#3b82f6', borderRadius: '50%' }} />
+                                                )}
+                                            </button>
+                                            {isSortMenuOpen && (
+                                                <div style={{
+                                                    position: 'absolute', top: 'calc(100% + 8px)', right: 0,
+                                                    width: '220px', backgroundColor: '#1a1d24', border: `1px solid ${COLORS.border}`,
+                                                    borderRadius: '12px', zIndex: 100, padding: '4px 0',
+                                                    boxShadow: '0 10px 40px rgba(0,0,0,0.8)',
+                                                }}>
+                                                    {[
+                                                        { label: 'Custom', key: 'custom' },
+                                                        { label: 'Difficulty', key: 'difficulty' },
+                                                        { label: 'Acceptance', key: 'acceptance' },
+                                                        { label: 'Question ID', key: 'id' }
+                                                    ].map((opt, idx) => {
+                                                        const isActive = sortConfig.key === opt.key
+                                                        return (
+                                                            <React.Fragment key={opt.key}>
+                                                                <button onClick={() => { 
+                                                                    if (isActive && opt.key !== 'custom') setSortConfig({ key: opt.key, direction: sortConfig.direction === 'asc' ? 'desc' : 'asc' })
+                                                                    else setSortConfig({ key: opt.key, direction: opt.key === 'acceptance' ? 'desc' : 'asc' })
+                                                                }} style={{
+                                                                    padding: '8px 16px', background: 'transparent', border: 'none', 
+                                                                    cursor: 'pointer', width: '100%',
+                                                                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                                                                    transition: 'all 0.15s'
+                                                                }} onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.04)'} onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}>
+                                                                    <span style={{ fontWeight: isActive ? 600 : 400, color: isActive && opt.key !== 'custom' ? '#3b82f6' : COLORS.textMain, fontSize: '13px' }}>{opt.label}</span>
+                                                                    <div style={{ width: '16px', display: 'flex', justifyContent: 'center', alignItems: 'center', flexShrink: 0 }}>
+                                                                        {opt.key === 'custom' && isActive && <Check style={{ width: '14px', height: '14px', color: '#10b981' }} />}
+                                                                        {opt.key !== 'custom' && isActive && <ArrowUpDown style={{ width: '12px', height: '12px', color: '#3b82f6', transform: sortConfig.direction === 'asc' ? 'rotate(0deg)' : 'rotate(180deg)' }} />}
+                                                                    </div>
+                                                                </button>
+                                                                {idx === 0 && <div style={{ height: '1px', backgroundColor: 'rgba(255,255,255,0.06)', margin: '4px 16px' }} />}
+                                                            </React.Fragment>
+                                                        )
+                                                    })}
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* Filter Menu */}
+                                        <div style={{ position: 'relative' }}>
+                                            <button onClick={() => { setIsFilterMenuOpen(!isFilterMenuOpen); setIsSortMenuOpen(false); }} style={{
+                                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                width: '30px', height: '30px', borderRadius: '8px',
+                                                backgroundColor: isFilterMenuOpen ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.03)',
+                                                border: '1px solid rgba(255,255,255,0.06)',
+                                                color: filterRules.length > 0 ? '#3b82f6' : '#6b7280',
+                                                cursor: 'pointer', transition: 'all 0.15s', flexShrink: 0
+                                            }} onMouseEnter={e => { e.currentTarget.style.color = '#d1d5db'; e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.06)' }} onMouseLeave={e => { e.currentTarget.style.color = filterRules.length > 0 ? '#3b82f6' : '#6b7280'; e.currentTarget.style.backgroundColor = isFilterMenuOpen ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.03)' }}>
+                                                <SlidersHorizontal style={{ width: '13px', height: '13px' }} />
+                                                {filterRules.length > 0 && (
+                                                    <span style={{ position: 'absolute', top: '2px', right: '2px', width: '6px', height: '6px', backgroundColor: '#3b82f6', borderRadius: '50%' }} />
+                                                )}
+                                            </button>
+                                            {isFilterMenuOpen && (
+                                                <div style={{
+                                                    position: 'absolute', top: 'calc(100% + 8px)', right: 0,
+                                                    width: '320px', backgroundColor: '#1a1d24', border: `1px solid ${COLORS.border}`,
+                                                    borderRadius: '12px', padding: '16px', zIndex: 100,
+                                                    boxShadow: '0 12px 40px rgba(0,0,0,0.8)'
+                                                }}>
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                                                        <span style={{ fontSize: '14px', fontWeight: 600, color: '#e5e7eb' }}>Advanced Filters</span>
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                            {['All', 'Any'].map(mode => (
+                                                                <button key={mode} onClick={() => setFilterMatchMode(mode)} style={{
+                                                                    fontSize: '11px', fontWeight: 600, padding: '4px 8px', borderRadius: '6px',
+                                                                    backgroundColor: filterMatchMode === mode ? '#3b82f6' : 'rgba(255,255,255,0.04)',
+                                                                    color: filterMatchMode === mode ? '#fff' : '#9ca3af',
+                                                                    border: 'none', cursor: 'pointer'
+                                                                }}>
+                                                                    Match {mode}
+                                                                </button>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+
+                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '16px' }}>
+                                                        {filterRules.map(rule => (
+                                                            <div key={rule.id} style={{ display: 'flex', gap: '6px', alignItems: 'center', opacity: rule.active ? 1 : 0.5 }}>
+                                                                <button onClick={() => updateRule(rule.id, { active: !rule.active })} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px', display: 'flex' }}>
+                                                                    {rule.active ? <Check style={{ width: '14px', height: '14px', color: '#10b981' }} /> : <div style={{ width: '14px', height: '14px', border: '1px solid #6b7280', borderRadius: '3px' }} />}
+                                                                </button>
+                                                                <select value={rule.field} onChange={e => updateRule(rule.id, { field: e.target.value, value: FILTER_FIELDS[e.target.value][0] })} style={{ flex: 1, backgroundColor: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '6px', padding: '6px', color: '#e5e7eb', fontSize: '12px', outline: 'none' }}>
+                                                                    {Object.keys(FILTER_FIELDS).map(f => <option key={f} value={f}>{f}</option>)}
+                                                                </select>
+                                                                <select value={rule.operator} onChange={e => updateRule(rule.id, { operator: e.target.value })} style={{ width: '60px', backgroundColor: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '6px', padding: '6px', color: '#e5e7eb', fontSize: '12px', outline: 'none' }}>
+                                                                    {FILTER_OPERATORS.map(o => <option key={o} value={o}>{o}</option>)}
+                                                                </select>
+                                                                <select value={rule.value} onChange={e => updateRule(rule.id, { value: e.target.value })} style={{ flex: 1, backgroundColor: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '6px', padding: '6px', color: '#e5e7eb', fontSize: '12px', outline: 'none' }}>
+                                                                    {FILTER_FIELDS[rule.field].map(v => <option key={v} value={v}>{v}</option>)}
+                                                                </select>
+                                                                <button onClick={() => removeRule(rule.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#f87171', padding: '4px' }}>
+                                                                    <Minus style={{ width: '12px', height: '12px' }} />
+                                                                </button>
+                                                            </div>
+                                                        ))}
+                                                        {filterRules.length === 0 && (
+                                                            <div style={{ textAlign: 'center', padding: '12px', color: '#6b7280', fontSize: '12px', border: '1px dashed rgba(255,255,255,0.1)', borderRadius: '8px' }}>
+                                                                No active filters.
+                                                            </div>
+                                                        )}
+                                                    </div>
+
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                                        <button onClick={addRule} style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px', color: '#3b82f6', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}>
+                                                            <Plus style={{ width: '12px', height: '12px' }} /> Add Filter
+                                                        </button>
+                                                        <div style={{ display: 'flex', gap: '8px' }}>
+                                                            <button onClick={resetRules} style={{ fontSize: '12px', color: '#9ca3af', background: 'none', border: 'none', cursor: 'pointer' }}>Reset</button>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
                                 </div>
 
                                 {/* Problem List */}
@@ -663,7 +895,7 @@ export default function ProblemSolver() {
                                         return (
                                             <button
                                                 key={p.id}
-                                                onClick={() => { navigate(`/problems/${p.id}`); setShowProblemList(false) }}
+                                                onClick={() => { navigateWithContext(p.id); setShowProblemList(false) }}
                                                 style={{
                                                     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                                                     width: '100%', padding: '10px 14px',

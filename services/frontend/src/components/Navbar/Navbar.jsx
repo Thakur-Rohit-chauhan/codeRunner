@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
-import { Shield, User, LogOut, Settings, Palette, ChevronDown, BookOpen, BarChart3, Layout, X, Download, Check } from 'lucide-react'
+import { Shield, User, LogOut, Settings, Palette, ChevronDown, BookOpen, BarChart3, Layout, X, Download, Check, Trophy } from 'lucide-react'
 import useAuthStore from '../../store/authStore'
 import { mockProblems } from '../../utils/mockData'
 
@@ -13,7 +13,6 @@ export default function Navbar() {
 
     // --- New States for drop-down features ---
     const [isNotesOpen, setIsNotesOpen] = useState(false)
-    const [isListsOpen, setIsListsOpen] = useState(false)
     const [notesText, setNotesText] = useState(() => localStorage.getItem('user_notes') || '')
     const [notesTitle, setNotesTitle] = useState(() => localStorage.getItem('user_notes_title') || 'Personal Notes')
     const [theme, setTheme] = useState(() => localStorage.getItem('app_theme') || 'dark')
@@ -99,6 +98,44 @@ export default function Navbar() {
                     );
                 })}
             </div>
+
+            {/* Contests CTA Button */}
+            {isAuthenticated && (
+                <Link
+                    to="/contests"
+                    className="hidden md:flex items-center gap-2"
+                    style={{
+                        padding: '8px 18px',
+                        borderRadius: '12px',
+                        background: location.pathname === '/contests'
+                            ? 'linear-gradient(135deg, #34d399 0%, #059669 100%)'
+                            : 'rgba(52,211,153,0.08)',
+                        border: '1px solid rgba(52,211,153,0.3)',
+                        color: location.pathname === '/contests' ? '#0b1a14' : '#34d399',
+                        fontSize: '13px',
+                        fontWeight: 700,
+                        letterSpacing: '0.05em',
+                        textDecoration: 'none',
+                        transition: 'all 0.25s',
+                        boxShadow: location.pathname === '/contests' ? '0 4px 16px rgba(52,211,153,0.3)' : 'none',
+                    }}
+                    onMouseEnter={e => {
+                        if (location.pathname !== '/contests') {
+                            e.currentTarget.style.background = 'rgba(52,211,153,0.15)'
+                            e.currentTarget.style.boxShadow = '0 4px 16px rgba(52,211,153,0.15)'
+                        }
+                    }}
+                    onMouseLeave={e => {
+                        if (location.pathname !== '/contests') {
+                            e.currentTarget.style.background = 'rgba(52,211,153,0.08)'
+                            e.currentTarget.style.boxShadow = 'none'
+                        }
+                    }}
+                >
+                    <Trophy size={14} />
+                    Contests
+                </Link>
+            )}
 
             {/* Auth Buttons */}
             <div className="flex items-center gap-3">
@@ -199,7 +236,7 @@ export default function Navbar() {
                                 {/* Quick stats */}
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '6px', marginBottom: '8px', padding: '0 2px' }}>
                                     {[
-                                        { Icon: BookOpen, label: 'Lists', onClick: () => { setIsListsOpen(true); setDropdown(false); } },
+                                        { Icon: BookOpen, label: 'Lists', onClick: () => { navigate('/list/bookmarks'); setDropdown(false); } },
                                         { Icon: Layout, label: 'Notes', onClick: () => { setIsNotesOpen(true); setDropdown(false); } },
                                         { Icon: BarChart3, label: 'Stats', onClick: () => { navigate(`/profile/${user?.username}`); setDropdown(false); } },
                                     ].map(({ Icon, label, onClick }) => (
@@ -373,36 +410,6 @@ export default function Navbar() {
                 </div>
             )}
 
-            {/* ═ Lists (Bookmarked Questions) Modal ═ */}
-            {isListsOpen && (
-                <div style={{ position: 'fixed', inset: 0, zIndex: 100000, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }}>
-                    <div style={{ width: '560px', maxHeight: '80vh', display: 'flex', flexDirection: 'column', backgroundColor: '#161a20', borderRadius: '16px', padding: '20px', border: '1px solid rgba(255,255,255,0.08)', boxShadow: '0 20px 50px rgba(0,0,0,0.5)' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-                            <h3 style={{ margin: 0, color: '#fff', fontSize: '18px', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 600 }}>
-                                <BookOpen size={20} className="text-green-400" /> Bookmarked Questions
-                            </h3>
-                            <button onClick={() => setIsListsOpen(false)} style={{ color: '#9ca3af', padding: '4px', borderRadius: '8px' }} onMouseEnter={e => e.currentTarget.style.backgroundColor='rgba(255,255,255,0.1)'} onMouseLeave={e => e.currentTarget.style.backgroundColor='transparent'}>
-                                <X size={20} />
-                            </button>
-                        </div>
-                        <div style={{ overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '8px', paddingRight: '4px' }}>
-                            {mockProblems.filter(p => p.starred).length === 0 ? (
-                                <p style={{ color: '#888', textAlign: 'center', padding: '40px 20px' }}>No bookmarked questions yet. Star some problems on the solver page!</p>
-                            ) : (
-                                mockProblems.filter(p => p.starred).map(p => (
-                                    <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px', backgroundColor: '#0d1117', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '12px', transition: 'all 0.2s', cursor: 'pointer' }} onMouseEnter={e => {e.currentTarget.style.backgroundColor='#1a202c'; e.currentTarget.style.borderColor='rgba(52,211,153,0.3)'}} onMouseLeave={e => {e.currentTarget.style.backgroundColor='#0d1117'; e.currentTarget.style.borderColor='rgba(255,255,255,0.06)'}} onClick={() => { setIsListsOpen(false); navigate('/problem-solver'); }}>
-                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                            <span style={{ color: '#fff', fontSize: '14.5px', fontWeight: 500 }}>{p.id}. {p.title}</span>
-                                            <span style={{ color: '#9ca3af', fontSize: '12px', fontWeight: 500, letterSpacing: '0.05em' }}>{p.domain}</span>
-                                        </div>
-                                        <span style={{ fontSize: '12px', padding: '4px 10px', borderRadius: '10px', backgroundColor: p.difficulty === 'Easy' ? 'rgba(52,211,153,0.1)' : p.difficulty === 'Medium' ? 'rgba(251,191,36,0.1)' : 'rgba(248,113,113,0.1)', color: p.difficulty === 'Easy' ? '#34d399' : p.difficulty === 'Medium' ? '#fbbf24' : '#f87171', fontWeight: 600 }}>{p.difficulty}</span>
-                                    </div>
-                                ))
-                            )}
-                        </div>
-                    </div>
-                </div>
-            )}
         </nav>
     )
 }

@@ -20,6 +20,36 @@ export const mockProblems = [
     { id: 18, title: 'Packet Capture Analysis', domain: 'CTF', difficulty: 'Easy', acceptance: '58.4%', tags: ['Packet Analysis', 'Wireshark'], status: null, starred: false, lastSubmitted: null },
     { id: 19, title: 'Buffer Overflow Exploit', domain: 'CTF', difficulty: 'Hard', acceptance: '18.2%', tags: ['Binary Exploit', 'Stack'], status: null, starred: false, lastSubmitted: null },
     { id: 20, title: 'SQL Injection Challenge', domain: 'CTF', difficulty: 'Medium', acceptance: '42.6%', tags: ['SQL', 'Web Security'], status: 'solved', starred: true, lastSubmitted: '2026-02-18T22:10:00Z' },
+    { id: 21, title: 'Valid Parentheses', domain: 'DSA', difficulty: 'Easy', acceptance: '40.6%', tags: ['String', 'Stack'], status: 'solved', starred: false, lastSubmitted: '2026-03-10T11:00:00Z' },
+    { id: 22, title: 'Merge Two Sorted Lists', domain: 'DSA', difficulty: 'Easy', acceptance: '64.1%', tags: ['Linked List', 'Recursion'], status: 'solved', starred: false, lastSubmitted: '2026-03-09T14:20:00Z' },
+    { id: 23, title: 'Generate Parentheses', domain: 'DSA', difficulty: 'Medium', acceptance: '74.2%', tags: ['String', 'Dynamic Programming', 'Backtracking'], status: 'attempted', starred: true, lastSubmitted: null },
+    { id: 24, title: 'Merge k Sorted Lists', domain: 'DSA', difficulty: 'Hard', acceptance: '51.4%', tags: ['Linked List', 'Divide and Conquer', 'Heap (Priority Queue)'], status: null, starred: false, lastSubmitted: null },
+    { id: 25, title: 'Swap Nodes in Pairs', domain: 'DSA', difficulty: 'Medium', acceptance: '64.0%', tags: ['Linked List', 'Recursion'], status: 'solved', starred: true, lastSubmitted: '2026-03-08T09:15:00Z' },
+    { id: 26, title: 'Remove Duplicates from Sorted Array', domain: 'DSA', difficulty: 'Easy', acceptance: '55.3%', tags: ['Array', 'Two Pointers'], status: 'solved', starred: false, lastSubmitted: '2026-03-07T16:45:00Z' },
+    { id: 27, title: 'Remove Element', domain: 'DSA', difficulty: 'Easy', acceptance: '56.2%', tags: ['Array', 'Two Pointers'], status: 'solved', starred: false, lastSubmitted: '2026-03-06T10:30:00Z' },
+    { id: 28, title: 'Find the Index of the First Occurrence in a String', domain: 'DSA', difficulty: 'Easy', acceptance: '41.8%', tags: ['Two Pointers', 'String', 'String Matching'], status: null, starred: false, lastSubmitted: null },
+    { id: 29, title: 'Divide Two Integers', domain: 'DSA', difficulty: 'Medium', acceptance: '17.6%', tags: ['Math', 'Bit Manipulation'], status: null, starred: false, lastSubmitted: null },
+    { id: 30, title: 'Substring with Concatenation of All Words', domain: 'DSA', difficulty: 'Hard', acceptance: '34.1%', tags: ['Hash Table', 'String', 'Sliding Window'], status: null, starred: true, lastSubmitted: null },
+    { id: 31, title: 'Next Permutation', domain: 'DSA', difficulty: 'Medium', acceptance: '40.2%', tags: ['Array', 'Two Pointers'], status: 'attempted', starred: false, lastSubmitted: null },
+    { id: 32, title: 'Longest Valid Parentheses', domain: 'DSA', difficulty: 'Hard', acceptance: '34.1%', tags: ['String', 'Dynamic Programming', 'Stack'], status: null, starred: true, lastSubmitted: null },
+    { id: 33, title: 'Search in Rotated Sorted Array', domain: 'DSA', difficulty: 'Medium', acceptance: '40.6%', tags: ['Array', 'Binary Search'], status: 'solved', starred: true, lastSubmitted: '2026-03-20T12:00:00Z' },
+    { id: 34, title: 'Find First and Last Position of Element in Sorted Array', domain: 'DSA', difficulty: 'Medium', acceptance: '44.3%', tags: ['Array', 'Binary Search'], status: null, starred: false, lastSubmitted: null },
+    { id: 35, title: 'Search Insert Position', domain: 'DSA', difficulty: 'Easy', acceptance: '44.8%', tags: ['Array', 'Binary Search'], status: 'solved', starred: false, lastSubmitted: '2026-03-19T09:30:00Z' },
+    { id: 36, title: 'Valid Sudoku', domain: 'DSA', difficulty: 'Medium', acceptance: '64.3%', tags: ['Array', 'Hash Table', 'Matrix'], status: 'solved', starred: true, lastSubmitted: '2026-02-10T14:45:00Z' },
+    { id: 37, title: 'Sudoku Solver', domain: 'DSA', difficulty: 'Hard', acceptance: '65.4%', tags: ['Array', 'Hash Table', 'Backtracking', 'Matrix'], status: null, starred: false, lastSubmitted: null },
+    { id: 38, title: 'Count and Say', domain: 'DSA', difficulty: 'Medium', acceptance: '55.3%', tags: ['String'], status: null, starred: false, lastSubmitted: null },
+    { id: 39, title: 'Combination Sum', domain: 'DSA', difficulty: 'Medium', acceptance: '72.1%', tags: ['Array', 'Backtracking'], status: 'solved', starred: true, lastSubmitted: '2026-02-05T11:20:00Z' },
+    { id: 40, title: 'Combination Sum II', domain: 'DSA', difficulty: 'Medium', acceptance: '55.4%', tags: ['Array', 'Backtracking'], status: null, starred: false, lastSubmitted: null },
+    { id: 41, title: 'First Missing Positive', domain: 'DSA', difficulty: 'Hard', acceptance: '42.6%', tags: ['Array', 'Hash Table'], status: 'attempted', starred: true, lastSubmitted: '2026-01-15T08:00:00Z' },
+    { id: 42, title: 'Trapping Rain Water', domain: 'DSA', difficulty: 'Hard', acceptance: '62.0%', tags: ['Array', 'Two Pointers', 'Dynamic Programming', 'Stack'], status: 'solved', starred: true, lastSubmitted: '2026-01-20T16:15:00Z' },
+    { id: 43, title: 'Multiply Strings', domain: 'DSA', difficulty: 'Medium', acceptance: '40.6%', tags: ['Math', 'String', 'Simulation'], status: null, starred: false, lastSubmitted: null },
+    { id: 44, title: 'Wildcard Matching', domain: 'DSA', difficulty: 'Hard', acceptance: '27.7%', tags: ['String', 'Dynamic Programming', 'Greedy', 'Recursion'], status: null, starred: false, lastSubmitted: null },
+    { id: 45, title: 'Jump Game II', domain: 'DSA', difficulty: 'Medium', acceptance: '40.9%', tags: ['Array', 'Dynamic Programming', 'Greedy'], status: 'solved', starred: false, lastSubmitted: '2025-12-10T10:00:00Z' },
+    { id: 46, title: 'Permutations', domain: 'DSA', difficulty: 'Medium', acceptance: '78.8%', tags: ['Array', 'Backtracking'], status: 'solved', starred: true, lastSubmitted: '2025-11-25T14:30:00Z' },
+    { id: 47, title: 'Permutations II', domain: 'DSA', difficulty: 'Medium', acceptance: '60.3%', tags: ['Array', 'Backtracking', 'Sorting'], status: null, starred: false, lastSubmitted: null },
+    { id: 48, title: 'Rotate Image', domain: 'DSA', difficulty: 'Medium', acceptance: '75.2%', tags: ['Array', 'Math', 'Matrix'], status: 'solved', starred: false, lastSubmitted: '2025-11-05T09:10:00Z' },
+    { id: 49, title: 'Group Anagrams', domain: 'DSA', difficulty: 'Medium', acceptance: '72.3%', tags: ['Array', 'Hash Table', 'String', 'Sorting'], status: 'solved', starred: true, lastSubmitted: '2025-10-15T16:20:00Z' },
+    { id: 73, title: 'Set Matrix Zeroes', domain: 'DSA', difficulty: 'Medium', acceptance: '62.6%', tags: ['Array', 'Hash Table', 'Matrix'], status: 'solved', starred: true, lastSubmitted: '2025-08-11T16:20:00Z' },
 ]
 
 export const mockProblemDetails = {
@@ -461,19 +491,35 @@ export const mockContestRatingHistory = [
     { date: 'Dec', rating: 1847 },
 ]
 
-export const mockHeatmapData = (() => {
-    const data = []
+// Generates activity heatmap purely from real problem submission data
+export function generateHeatmapData(problems) {
     const today = new Date()
+
+    // Build date -> count map from real lastSubmitted dates
+    const submissionMap = {}
+    problems.forEach(p => {
+        if (p.lastSubmitted) {
+            const date = p.lastSubmitted.split('T')[0]
+            submissionMap[date] = (submissionMap[date] || 0) + 1
+        }
+    })
+
+    // Fill full 365-day grid with real data only
+    const data = []
     for (let i = 365; i >= 0; i--) {
         const d = new Date(today)
         d.setDate(d.getDate() - i)
+        const dateStr = d.toISOString().split('T')[0]
         data.push({
-            date: d.toISOString().split('T')[0],
-            count: Math.random() > 0.4 ? Math.floor(Math.random() * 8) : 0,
+            date: dateStr,
+            count: submissionMap[dateStr] || 0,
         })
     }
     return data
-})()
+}
+
+// Keep for backward compat — computed from real data, no randomness
+export const mockHeatmapData = generateHeatmapData(mockProblems)
 
 export const mockRecentSubmissions = [
     { id: 1, problem: 'Two Sum', language: 'C++', time: '2 hours ago', status: 'Accepted', runtime: '4ms' },
