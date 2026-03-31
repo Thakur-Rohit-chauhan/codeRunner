@@ -46,6 +46,7 @@ class TestValidators:
     def test_validate_language_valid(self) -> None:
         assert validate_language("python") == "python"
         assert validate_language("cpp") == "cpp"
+        assert validate_language("notebook") == "notebook"
 
     def test_validate_language_invalid(self) -> None:
         with pytest.raises(ValueError, match="must be one of"):
