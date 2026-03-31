@@ -20,15 +20,19 @@ services:
     image: postgres:16-alpine
     container_name: platform-postgres
     environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER:-problem_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-secure_password_change_me}
+      POSTGRES_DB: ${POSTGRES_DB:-problems_db}
+      SUBMISSION_POSTGRES_USER: ${SUBMISSION_POSTGRES_USER:-submission_user}
+      SUBMISSION_POSTGRES_PASSWORD: ${SUBMISSION_POSTGRES_PASSWORD:-secure_password_change_me}
+      SUBMISSION_POSTGRES_DB: ${SUBMISSION_POSTGRES_DB:-submissions_db}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./infrastructure/postgres/init:/docker-entrypoint-initdb.d:ro
     ports:
       - "5432:5432"
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER}" ]
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-problem_user}" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -44,7 +48,7 @@ services:
       dockerfile: Dockerfile
     container_name: platform-problem-service
     environment:
-      DATABASE_URL: ${DATABASE_URL}
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://problem_user:secure_password_change_me@postgres:5432/problems_db}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       ENVIRONMENT: ${ENVIRONMENT:-development}
       SERVICE_NAME: problem-service
@@ -117,7 +121,7 @@ services:
       dockerfile: Dockerfile
     container_name: platform-submission-service
     environment:
-      DATABASE_URL: ${SUBMISSION_DATABASE_URL}
+      DATABASE_URL: ${SUBMISSION_DATABASE_URL:-postgresql+asyncpg://submission_user:secure_password_change_me@postgres:5432/submissions_db}
       RABBITMQ_URL: ${RABBITMQ_URL:-amqp://guest:guest@rabbitmq:5672/}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       ENVIRONMENT: ${ENVIRONMENT:-development}
@@ -130,6 +134,8 @@ services:
       postgres:
         condition: service_healthy
       rabbitmq:
+        condition: service_healthy
+      problem-service:
         condition: service_healthy
     healthcheck:
       test: [ "CMD", "curl", "-f", "http://localhost:8002/health" ]
@@ -150,7 +156,7 @@ services:
       dockerfile: Dockerfile
     container_name: platform-judge-standard
     environment:
-      DATABASE_URL: ${SUBMISSION_DATABASE_URL}
+      DATABASE_URL: ${SUBMISSION_DATABASE_URL:-postgresql+asyncpg://submission_user:secure_password_change_me@postgres:5432/submissions_db}
       RABBITMQ_URL: ${RABBITMQ_URL:-amqp://guest:guest@rabbitmq:5672/}
       PROBLEM_SERVICE_GRPC: problem-service:50051
       LOG_LEVEL: ${LOG_LEVEL:-info}
@@ -197,7 +203,7 @@ services:
       dockerfile: Dockerfile
     container_name: platform-contest-service
     environment:
-      DATABASE_URL: ${DATABASE_URL}
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://problem_user:secure_password_change_me@postgres:5432/problems_db}
       REDIS_URL: ${REDIS_URL:-redis://:@redis:6379/0}
       RABBITMQ_URL: ${RABBITMQ_URL:-amqp://guest:guest@rabbitmq:5672/}
       LOG_LEVEL: ${LOG_LEVEL:-info}
@@ -222,6 +228,34 @@ services:
     networks:
       - platform-network
     restart: unless-stopped
+
+  # ---------------------------------------------------
+  # Phase 6: Judge-ML Consumer Worker
+  # ---------------------------------------------------
+  judge-ml:
+    build:
+      context: ./services/judge-ml
+      dockerfile: Dockerfile
+    container_name: platform-judge-ml
+    environment:
+      DATABASE_URL: ${SUBMISSION_DATABASE_URL:-postgresql+asyncpg://submission_user:secure_password_change_me@postgres:5432/submissions_db}
+      RABBITMQ_URL: ${RABBITMQ_URL:-amqp://guest:guest@rabbitmq:5672/}
+      PROBLEM_SERVICE_GRPC: problem-service:50051
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      SERVICE_NAME: judge-ml
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      problem-service:
+        condition: service_healthy
+    networks:
+      - platform-network
+    restart: unless-stopped
+    # No ports - headless background worker
+    # No healthcheck - not an HTTP service
 
 # ---------------------------------------------------
 # Volumes

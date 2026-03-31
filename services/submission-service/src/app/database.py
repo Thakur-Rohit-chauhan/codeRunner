@@ -2,6 +2,7 @@
 
 from collections.abc import AsyncGenerator
 
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 from sqlmodel import SQLModel
@@ -10,6 +11,8 @@ from app.config import settings
 from app.logger import get_logger
 
 logger = get_logger(__name__)
+
+DDL_LOCK_ID = 842731
 
 engine = create_async_engine(
     settings.DATABASE_URL,
@@ -32,7 +35,13 @@ async def init_db() -> None:
     """Create all database tables defined by SQLModel metadata."""
     logger.info("Initializing database tables...")
     async with engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.create_all)
+        if conn.dialect.name == "postgresql":
+            await conn.execute(text("SELECT pg_advisory_lock(:lock_id)"), {"lock_id": DDL_LOCK_ID})
+        try:
+            await conn.run_sync(SQLModel.metadata.create_all)
+        finally:
+            if conn.dialect.name == "postgresql":
+                await conn.execute(text("SELECT pg_advisory_unlock(:lock_id)"), {"lock_id": DDL_LOCK_ID})
     logger.info("Database tables initialized successfully")
 
 

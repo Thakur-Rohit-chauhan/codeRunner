@@ -33,6 +33,7 @@ class Settings(BaseSettings):
 
     # Queue Configuration
     STANDARD_JUDGE_QUEUE: str = Field(default="standard_judge_queue")
+    ML_JUDGE_QUEUE: str = Field(default="ml_judge_queue")
     QUEUE_DURABLE: bool = Field(default=True)
     MESSAGE_TTL: int = Field(default=3600000)  # 1 hour
     SUBMISSION_RETRY_MAX: int = Field(default=3)

@@ -10,6 +10,7 @@ def format_judge_message(
     problem_id: int,
     code: str,
     language: str,
+    problem_type: str | None = None,
     user_id: str | None = None,
     contest_id: int | None = None,
     retry_count: int = 0,
@@ -35,6 +36,7 @@ def format_judge_message(
         "contest_id": contest_id,
         "code": code,
         "language": language,
+        "problem_type": problem_type,
         "timestamp": datetime.utcnow().isoformat() + "Z",
         "retry_count": retry_count,
     }

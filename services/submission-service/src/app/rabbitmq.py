@@ -27,6 +27,20 @@ class RabbitMQClient:
         self.channel: aio_pika.abc.AbstractChannel | None = None
         self.queue_available: bool = False
 
+    async def _declare_queue(self, queue_name: str) -> None:
+        """Declare a judge queue with the shared delivery settings."""
+        if not self.channel:
+            raise RuntimeError("RabbitMQ channel is not initialized")
+
+        await self.channel.declare_queue(
+            queue_name,
+            durable=settings.QUEUE_DURABLE,
+            arguments={
+                "x-message-ttl": settings.MESSAGE_TTL,
+                "x-max-length": 100000,
+            },
+        )
+
     async def connect(self) -> None:
         """Connect to RabbitMQ with robust reconnection.
 
@@ -40,20 +54,15 @@ class RabbitMQClient:
             )
             self.channel = await self.connection.channel()
 
-            # Declare the queue (idempotent)
-            await self.channel.declare_queue(
-                settings.STANDARD_JUDGE_QUEUE,
-                durable=settings.QUEUE_DURABLE,
-                arguments={
-                    "x-message-ttl": settings.MESSAGE_TTL,
-                    "x-max-length": 100000,
-                },
-            )
+            # Declare known queues (idempotent)
+            await self._declare_queue(settings.STANDARD_JUDGE_QUEUE)
+            await self._declare_queue(settings.ML_JUDGE_QUEUE)
 
             self.queue_available = True
             logger.info(
-                "Connected to RabbitMQ, queue '%s' ready",
+                "Connected to RabbitMQ, queues ready: %s, %s",
                 settings.STANDARD_JUDGE_QUEUE,
+                settings.ML_JUDGE_QUEUE,
             )
         except Exception as exc:
             logger.warning("Failed to connect to RabbitMQ: %s", exc)
@@ -67,25 +76,31 @@ class RabbitMQClient:
         self.queue_available = False
 
     async def publish(
-        self, message_body: bytes, correlation_id: str
+        self,
+        message_body: bytes,
+        correlation_id: str,
+        queue_name: str,
     ) -> tuple[bool, str | None]:
         """Publish a message to the judge queue.
 
         Args:
             message_body: UTF-8 encoded JSON bytes.
             correlation_id: Unique ID for message tracking (submission_id).
+            queue_name: Target RabbitMQ queue.
 
         Returns:
             Tuple of (success, correlation_id or None).
         """
         if not self.queue_available or not self.channel:
             logger.warning(
-                "RabbitMQ unavailable, skipping publish for correlation_id=%s",
+                "RabbitMQ unavailable, skipping publish for correlation_id=%s queue=%s",
                 correlation_id,
+                queue_name,
             )
             return False, None
 
         try:
+            await self._declare_queue(queue_name)
             message = Message(
                 body=message_body,
                 correlation_id=correlation_id,
@@ -94,21 +109,22 @@ class RabbitMQClient:
 
             await self.channel.default_exchange.publish(
                 message,
-                routing_key=settings.STANDARD_JUDGE_QUEUE,
+                routing_key=queue_name,
             )
 
             logger.info(
                 "Published to queue '%s' | correlation_id=%s",
-                settings.STANDARD_JUDGE_QUEUE,
+                queue_name,
                 correlation_id,
             )
             return True, correlation_id
 
         except Exception as exc:
             logger.error(
-                "Failed to publish to RabbitMQ: %s | correlation_id=%s",
+                "Failed to publish to RabbitMQ: %s | correlation_id=%s | queue=%s",
                 exc,
                 correlation_id,
+                queue_name,
             )
             self.queue_available = False
             return False, None

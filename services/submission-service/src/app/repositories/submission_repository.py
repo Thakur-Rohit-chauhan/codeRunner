@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import func, or_
+from sqlalchemy import case, func, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
@@ -93,6 +93,48 @@ class SubmissionRepository:
         await session.flush()
         await session.refresh(submission)
         return submission
+
+    async def mark_queue_dispatch(
+        self,
+        session: AsyncSession,
+        submission_id: int,
+        *,
+        queue_id: str | None,
+        published: bool,
+    ) -> Submission | None:
+        """Persist queue metadata without clobbering newer worker updates.
+
+        When a judge consumes quickly, the submission may already be RUNNING
+        or COMPLETED by the time the API request records the queue state.
+        This conditional update only changes `status` when the row is still
+        `PENDING`, while always attaching the correlation id when available.
+        """
+        values: dict[str, object] = {
+            "updated_at": datetime.utcnow(),
+        }
+
+        if queue_id is not None:
+            values["queue_id"] = queue_id
+
+        if published:
+            values["status"] = case(
+                (Submission.status == "PENDING", "QUEUED"),
+                else_=Submission.status,
+            )
+
+        statement = (
+            update(Submission)
+            .where(
+                Submission.id == submission_id,
+                Submission.is_deleted == False,  # noqa: E712
+            )
+            .values(**values)
+        )
+        await session.execute(statement)
+        await session.flush()
+
+        refreshed = await self.get_by_id(session, submission_id)
+        return refreshed
 
     async def increment_retry(
         self, session: AsyncSession, submission: Submission

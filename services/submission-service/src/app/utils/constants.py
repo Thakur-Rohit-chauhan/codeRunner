@@ -29,6 +29,7 @@ class Language(StrEnum):
     """Supported programming languages."""
 
     PYTHON = "python"
+    NOTEBOOK = "notebook"
     CPP = "cpp"
     JAVA = "java"
     JAVASCRIPT = "javascript"

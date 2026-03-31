@@ -29,6 +29,19 @@ test_session_factory = sessionmaker(
 )
 
 
+@pytest.fixture(autouse=True)
+def stub_problem_lookup(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep submission tests isolated from the external problem-service."""
+
+    async def fake_get_problem(self, problem_id: int):
+        return None
+
+    monkeypatch.setattr(
+        "app.services.problem_service_client.ProblemServiceClient.get_problem",
+        fake_get_problem,
+    )
+
+
 @pytest_asyncio.fixture(scope="function")
 async def db_session() -> AsyncGenerator[AsyncSession, None]:
     """Create a fresh database for each test."""
