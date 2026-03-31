@@ -124,7 +124,12 @@ export default function Register() {
     }
 
     const handleGoogle = () => {
-        mockLogin({ email: form.email || 'google.user@coderunner.dev', displayName: form.fullName || 'Google User' })
+        const fallbackKey = form.username || `google_${Date.now()}`
+        mockLogin({
+            username: fallbackKey,
+            email: form.email || `${fallbackKey}@coderunner.dev`,
+            displayName: form.fullName || 'Google User',
+        })
         toast.success('Signed in with Google')
         navigate('/problems')
     }

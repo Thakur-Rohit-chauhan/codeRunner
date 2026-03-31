@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react'
+import React, { Suspense, lazy, useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import { Link, useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { Panel, Group, Separator } from 'react-resizable-panels'
 import Editor from '@monaco-editor/react'
@@ -24,6 +24,67 @@ const domainColors = {
     CTF: { bg: 'rgba(239,68,68,0.12)', text: '#f87171', border: 'rgba(239,68,68,0.2)' },
 }
 
+const domainLabelMap = {
+    DSA: 'DSA',
+    ML: 'Machine Learning',
+    CTF: 'Cyber Security',
+}
+
+const ProblemSolutionsTab = lazy(() =>
+    import('../components/ProblemSolutionsTab').catch(() => ({
+        default: function ProblemSolutionsUnavailable() {
+            return (
+                <div style={{
+                    padding: '24px',
+                    borderRadius: '16px',
+                    border: '1px solid rgba(255,255,255,0.08)',
+                    background: 'rgba(255,255,255,0.02)',
+                    color: '#9ca3af',
+                    fontSize: '13px',
+                }}>
+                    Solutions are temporarily unavailable for this problem.
+                </div>
+            )
+        },
+    }))
+)
+
+class SolutionsTabErrorBoundary extends React.Component {
+    constructor(props) {
+        super(props)
+        this.state = { hasError: false }
+    }
+
+    static getDerivedStateFromError() {
+        return { hasError: true }
+    }
+
+    componentDidUpdate(prevProps) {
+        if (prevProps.resetKey !== this.props.resetKey && this.state.hasError) {
+            this.setState({ hasError: false })
+        }
+    }
+
+    render() {
+        if (this.state.hasError) {
+            return (
+                <div style={{
+                    padding: '24px',
+                    borderRadius: '16px',
+                    border: '1px solid rgba(255,255,255,0.08)',
+                    background: 'rgba(255,255,255,0.02)',
+                    color: '#9ca3af',
+                    fontSize: '13px',
+                }}>
+                    Community solutions could not be loaded for this problem.
+                </div>
+            )
+        }
+
+        return this.props.children
+    }
+}
+
 const diffColors = {
     Easy: '#34d399',
     Medium: '#fbbf24',
@@ -34,12 +95,6 @@ const diffBg = {
     Easy: 'rgba(52,211,153,0.1)',
     Medium: 'rgba(251,191,36,0.1)',
     Hard: 'rgba(248,113,113,0.1)',
-}
-
-const domainLabelMap = {
-    DSA: 'DSA',
-    ML: 'Machine Learning',
-    CTF: 'Cyber Security',
 }
 
 function getRunToast(problem) {
@@ -287,7 +342,27 @@ export default function ProblemSolver() {
 
     const { user, logout } = useAuthStore()
     const addSubmission = useSubmissionStore((state) => state.addSubmission)
-    const problem = useMemo(() => getProblemDetail(id) || getProblemDetail(1), [id])
+    const rawProblem = useMemo(() => getProblemDetail(id) || getProblemDetail(1), [id])
+    const problem = useMemo(() => {
+        const next = rawProblem || {}
+        const domain = domainColors[next.domain] ? next.domain : 'DSA'
+        const difficulty = diffColors[next.difficulty] ? next.difficulty : 'Easy'
+
+        return {
+            id: next.id ?? 1,
+            title: next.title || 'Untitled Problem',
+            domain,
+            difficulty,
+            acceptance: next.acceptance || '0%',
+            tags: Array.isArray(next.tags) ? next.tags : [],
+            companies: Array.isArray(next.companies) ? next.companies : [],
+            description: typeof next.description === 'string' ? next.description : '',
+            examples: Array.isArray(next.examples) ? next.examples : [],
+            constraints: Array.isArray(next.constraints) ? next.constraints : [],
+            starterCode: next.starterCode && typeof next.starterCode === 'object' ? next.starterCode : {},
+            testCases: Array.isArray(next.testCases) ? next.testCases : [],
+        }
+    }, [rawProblem])
     const availableLanguages = useMemo(() => getLanguagesForDomain(problem.domain), [problem.domain])
 
     const [lang, setLang] = useState(getDefaultLanguageForDomain(problem.domain))
@@ -300,16 +375,6 @@ export default function ProblemSolver() {
     const [bottomTab, setBottomTab] = useState('testcase')
     const [testInput, setTestInput] = useState(problem.testCases[0]?.input || '')
     const [testResult, setTestResult] = useState(null)
-
-    // Reset code and test input when problem changes
-    useEffect(() => {
-        setLang(getDefaultLanguageForDomain(problem.domain))
-        setCodes(buildStarterCodeMap(problem))
-        setTestInput(problem.testCases[0]?.input || '')
-        setTestResult(null)
-        setDescTab('description')
-        setBottomTab('testcase')
-    }, [problem])
     const [running, setRunning] = useState(false)
     const [timer, setTimer] = useState(0)
     const [timerRunning, setTimerRunning] = useState(false)
@@ -326,6 +391,16 @@ export default function ProblemSolver() {
     const sidebarRef = useRef(null)
     const profileDropdownRef = useRef(null)
     const editorRef = useRef(null)
+
+    // Reset code and test input when problem changes
+    useEffect(() => {
+        setLang(getDefaultLanguageForDomain(problem.domain))
+        setCodes(buildStarterCodeMap(problem))
+        setTestInput(problem.testCases[0]?.input || '')
+        setTestResult(null)
+        setDescTab('description')
+        setBottomTab('testcase')
+    }, [problem])
 
     // Determine the list of problems based on topic or list context
     const contextProblems = useMemo(() => {
@@ -1376,22 +1451,24 @@ export default function ProblemSolver() {
                             )}
 
                             {descTab === 'solutions' && (
-                                <div style={{
-                                    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                                    height: '260px', gap: '12px', color: '#4b5563',
-                                }}>
-                                    <div style={{
-                                        width: '48px', height: '48px', borderRadius: '12px',
-                                        background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)',
-                                        display: 'flex', alignItems: 'center', justifyContent: 'center'
-                                    }}>
-                                        <MessageSquare style={{ width: '22px', height: '22px', color: '#374151' }} />
-                                    </div>
-                                    <div style={{ textAlign: 'center' }}>
-                                        <p style={{ fontSize: '13.5px', fontWeight: 600, color: '#6b7280', marginBottom: '4px' }}>Community Solutions</p>
-                                        <p style={{ fontSize: '12px', color: '#4b5563' }}>Coming soon — stay tuned!</p>
-                                    </div>
-                                </div>
+                                <SolutionsTabErrorBoundary resetKey={`${problem.domain}:${problem.id}`}>
+                                    <Suspense
+                                        fallback={
+                                            <div style={{
+                                                padding: '24px',
+                                                borderRadius: '16px',
+                                                border: '1px solid rgba(255,255,255,0.08)',
+                                                background: 'rgba(255,255,255,0.02)',
+                                                color: '#9ca3af',
+                                                fontSize: '13px',
+                                            }}>
+                                                Loading solutions...
+                                            </div>
+                                        }
+                                    >
+                                        <ProblemSolutionsTab key={`${problem.domain}:${problem.id}`} problem={problem} />
+                                    </Suspense>
+                                </SolutionsTabErrorBoundary>
                             )}
 
                             {descTab === 'submissions' && (

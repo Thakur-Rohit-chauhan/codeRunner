@@ -1,6 +1,8 @@
 import { create } from 'zustand'
 
-const USERS_KEY = 'coderunner_users_v1'
+export const AUTH_USERS_STORAGE_KEY = 'coderunner_users_v1'
+
+const USERS_KEY = AUTH_USERS_STORAGE_KEY
 
 const safeReadUsers = () => {
     if (typeof window === 'undefined') return {}
@@ -35,6 +37,20 @@ const normalizeUsername = (value = '') =>
         .replace(/\s+/g, '_')
         .replace(/[^a-z0-9_]/g, '')
 
+const buildStableUserId = ({ username = '', email = '' }) => {
+    const normalizedUsername = normalizeUsername(username)
+    const normalizedEmail = (email || '').trim().toLowerCase()
+    return `user:${normalizedUsername || normalizedEmail || 'anonymous'}`
+}
+
+const ensureStableIdentity = (user) => {
+    if (!user) return user
+    return {
+        ...user,
+        id: user.id || buildStableUserId(user),
+    }
+}
+
 const buildUserFromSeed = ({ username, email, displayName }) => {
     const seed = usernameSeed(username)
     const ratings = ['Novice', 'Apprentice', 'Guardian', 'Elite', 'Legend']
@@ -48,7 +64,7 @@ const buildUserFromSeed = ({ username, email, displayName }) => {
     const totalProblems = 500 + (seed % 5000)
 
     return {
-        id: Date.now(),
+        id: buildStableUserId({ username, email }),
         username,
         email,
         displayName,
@@ -82,7 +98,7 @@ const buildUserFromSeed = ({ username, email, displayName }) => {
 }
 
 const defaultMockUser = () => ({
-    id: 1,
+    id: buildStableUserId({ username: 'coderunner', email: 'user@coderunner.dev' }),
     username: 'coderunner',
     email: 'user@coderunner.dev',
     displayName: 'Code Runner',
@@ -127,11 +143,12 @@ const useAuthStore = create((set, get) => ({
     isAuthenticated: false,
 
     login: (userData, token) => set((state) => {
-        const nextUsers = { ...state.users, [userData.username]: userData }
+        const normalizedUser = ensureStableIdentity(userData)
+        const nextUsers = { ...state.users, [normalizedUser.username]: normalizedUser }
         safeWriteUsers(nextUsers)
         return {
             users: nextUsers,
-            user: userData,
+            user: normalizedUser,
             token,
             isAuthenticated: true,
         }
@@ -146,7 +163,7 @@ const useAuthStore = create((set, get) => ({
     // Update user profile globally and persist it in the local directory.
     updateUser: (newData) => set((state) => {
         if (!state.user) return state
-        const updated = { ...state.user, ...newData }
+        const updated = ensureStableIdentity({ ...state.user, ...newData })
         const nextUsers = { ...state.users, [updated.username]: updated }
         safeWriteUsers(nextUsers)
         return { users: nextUsers, user: updated }
@@ -181,6 +198,7 @@ const useAuthStore = create((set, get) => ({
             }
         }
 
+        selected = ensureStableIdentity(selected)
         nextUsers[selected.username] = selected
         safeWriteUsers(nextUsers)
 

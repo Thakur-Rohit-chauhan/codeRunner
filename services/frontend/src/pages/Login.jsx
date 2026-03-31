@@ -117,7 +117,12 @@ export default function Login() {
     }
 
     const handleGoogle = () => {
-        mockLogin({ email: form.email || 'google.user@coderunner.dev', displayName: 'Google User' })
+        const fallbackKey = `google_${Date.now()}`
+        mockLogin({
+            username: form.email ? form.email.split('@')[0] : fallbackKey,
+            email: form.email || `${fallbackKey}@coderunner.dev`,
+            displayName: 'Google User',
+        })
         toast.success('Signed in with Google')
         navigate('/problems')
     }
