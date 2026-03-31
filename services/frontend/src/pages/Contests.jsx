@@ -185,7 +185,7 @@ function CreateContestModal({ onClose, onCreate }) {
     const { addCustomProblem } = useContestStore()
     const allProblems = mockProblems
     const [form, setForm] = useState({
-        title: '', type: 'custom', description: '', startTime: '',
+        title: '', domain: 'DSA', type: 'custom', description: '', startTime: '',
         duration: 90, prizes: ['', '', ''], tags: '', visibility: 'public',
         selectedProblems: [],
     })
@@ -202,9 +202,10 @@ function CreateContestModal({ onClose, onCreate }) {
 
     const filtered = useMemo(() =>
         [...createdProblems, ...allProblems]
+            .filter(p => p.domain === form.domain)
             .filter(p => p.title.toLowerCase().includes(searchQ.toLowerCase()))
             .slice(0, 20),
-        [searchQ, createdProblems]
+        [searchQ, createdProblems, form.domain]
     )
 
     const toggleProblem = (id) => {
@@ -244,6 +245,7 @@ function CreateContestModal({ onClose, onCreate }) {
         if (!validateProblem()) return
         const id = addCustomProblem({
             title: newProb.title,
+            domain: form.domain,
             difficulty: newProb.difficulty,
             tags: newProb.tags.split(',').map(t => t.trim()).filter(Boolean),
             description: newProb.description,
@@ -251,7 +253,14 @@ function CreateContestModal({ onClose, onCreate }) {
             constraints: newProb.constraint ? [newProb.constraint] : [],
             testCases: newProb.exInput ? [{ input: newProb.exInput, expectedOutput: newProb.exOutput || 'expected' }] : [],
         })
-        const createdProbObj = { id, title: newProb.title, difficulty: newProb.difficulty, tags: newProb.tags.split(',').map(t => t.trim()).filter(Boolean), isCustom: true }
+        const createdProbObj = {
+            id,
+            title: newProb.title,
+            difficulty: newProb.difficulty,
+            tags: newProb.tags.split(',').map(t => t.trim()).filter(Boolean),
+            domain: form.domain,
+            isCustom: true,
+        }
         setCreatedProblems(cp => [createdProbObj, ...cp])
         setForm(f => ({ ...f, selectedProblems: [...f.selectedProblems, id] }))
         setNewProb(emptyProblem)
@@ -263,12 +272,13 @@ function CreateContestModal({ onClose, onCreate }) {
         if (!validate2()) return
         const defaultStart = new Date(Date.now() + 86400000).toISOString()
         onCreate({
-            title: form.title, type: form.type, description: form.description,
+            title: form.title, domain: form.domain, type: form.type, description: form.description,
             startTime: form.startTime ? new Date(form.startTime).toISOString() : defaultStart,
             duration: Number(form.duration),
             prizes: form.prizes.filter(Boolean),
             tags: form.tags.split(',').map(t => t.trim()).filter(Boolean),
             problemIds: form.selectedProblems,
+            ranking: form.domain === 'ML' ? 'accuracy' : 'score',
         })
         onClose()
     }
@@ -304,8 +314,20 @@ function CreateContestModal({ onClose, onCreate }) {
                             <input style={inputStyle} placeholder="e.g. My Weekly DSA Contest" value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} onFocus={e => e.target.style.borderColor = 'rgba(52,211,153,0.5)'} onBlur={e => e.target.style.borderColor = 'rgba(255,255,255,0.1)'} />
                             {errors.title && <p style={errStyle}>{errors.title}</p>}
                         </div>
-                        {/* Type + Visibility row */}
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                        {/* Domain + Type + Visibility row */}
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '14px' }}>
+                            <div>
+                                <label style={labelStyle}>Contest Domain</label>
+                                <select
+                                    style={{ ...inputStyle, cursor: 'pointer' }}
+                                    value={form.domain}
+                                    onChange={e => setForm(f => ({ ...f, domain: e.target.value, selectedProblems: [] }))}
+                                >
+                                    <option value="DSA" style={{ background: '#1a1f2e' }}>Algorithms / DSA</option>
+                                    <option value="ML" style={{ background: '#1a1f2e' }}>Machine Learning</option>
+                                    <option value="CTF" style={{ background: '#1a1f2e' }}>Cyber Security</option>
+                                </select>
+                            </div>
                             <div>
                                 <label style={labelStyle}>Contest Type</label>
                                 <select style={{ ...inputStyle, cursor: 'pointer' }} value={form.type} onChange={e => setForm(f => ({ ...f, type: e.target.value }))}>
@@ -319,6 +341,13 @@ function CreateContestModal({ onClose, onCreate }) {
                                     <option value="private" style={{ background: '#1a1f2e' }}>🔒 Private</option>
                                 </select>
                             </div>
+                        </div>
+                        <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '12px', padding: '12px 16px', fontSize: '13px', color: '#9ca3af', lineHeight: 1.6 }}>
+                            {form.domain === 'ML'
+                                ? 'ML contests use a Kaggle-style leaderboard: participants rank by highest achieved accuracy, with earlier best submissions winning ties.'
+                                : form.domain === 'CTF'
+                                    ? 'Cyber contests rank participants by challenge score and solve time.'
+                                    : 'DSA contests rank participants by score, solved count, and time.'}
                         </div>
                         {/* Start time + Duration */}
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
@@ -382,15 +411,15 @@ function CreateContestModal({ onClose, onCreate }) {
                             <div>
                                 <div style={{ position: 'relative', marginBottom: '12px' }}>
                                     <Search style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#6b7280', width: '15px' }} />
-                                    <input style={{ ...inputStyle, paddingLeft: '38px' }} placeholder="Search problems..." value={searchQ} onChange={e => setSearchQ(e.target.value)} onFocus={e => e.target.style.borderColor = 'rgba(52,211,153,0.5)'} onBlur={e => e.target.style.borderColor = 'rgba(255,255,255,0.1)'} />
+                                    <input style={{ ...inputStyle, paddingLeft: '38px' }} placeholder={`Search ${form.domain} problems...`} value={searchQ} onChange={e => setSearchQ(e.target.value)} onFocus={e => e.target.style.borderColor = 'rgba(52,211,153,0.5)'} onBlur={e => e.target.style.borderColor = 'rgba(255,255,255,0.1)'} />
                                 </div>
                                 <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '10px', display: 'flex', justifyContent: 'space-between' }}>
                                     <span>{form.selectedProblems.length} selected</span>
-                                    {createdProblems.length > 0 && <span style={{ color: '#c084fc' }}>✨ {createdProblems.length} custom problem{createdProblems.length > 1 ? 's' : ''} created</span>}
+                                    {createdProblems.filter(p => p.domain === form.domain).length > 0 && <span style={{ color: '#c084fc' }}>✨ {createdProblems.filter(p => p.domain === form.domain).length} custom problem{createdProblems.filter(p => p.domain === form.domain).length > 1 ? 's' : ''} created</span>}
                                 </div>
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '300px', overflowY: 'auto', paddingRight: '4px' }}>
                                     {/* Custom problems first */}
-                                    {createdProblems.map(p => {
+                                    {createdProblems.filter(p => p.domain === form.domain).map(p => {
                                         const sel = form.selectedProblems.includes(p.id)
                                         return (
                                             <div key={p.id} onClick={() => toggleProblem(p.id)} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 14px', borderRadius: '12px', background: sel ? 'rgba(192,132,252,0.08)' : 'rgba(192,132,252,0.04)', border: `1px solid ${sel ? 'rgba(192,132,252,0.3)' : 'rgba(192,132,252,0.15)'}`, cursor: 'pointer', transition: 'all 0.15s' }}>
@@ -399,6 +428,7 @@ function CreateContestModal({ onClose, onCreate }) {
                                                 </div>
                                                 <span style={{ flex: 1, fontSize: '14px', color: '#e5e7eb', fontWeight: 500 }}>{p.title}</span>
                                                 <span style={{ fontSize: '11px', color: '#c084fc', background: 'rgba(192,132,252,0.1)', padding: '2px 8px', borderRadius: '6px', fontWeight: 700 }}>Custom</span>
+                                                <span style={{ fontSize: '11px', color: '#9ca3af', background: 'rgba(255,255,255,0.04)', padding: '2px 8px', borderRadius: '6px', fontWeight: 700 }}>{p.domain}</span>
                                                 <span style={{ fontSize: '12px', fontWeight: 600, color: p.difficulty === 'Easy' ? '#34d399' : p.difficulty === 'Medium' ? '#fbbf24' : '#f87171', background: p.difficulty === 'Easy' ? 'rgba(52,211,153,0.1)' : p.difficulty === 'Medium' ? 'rgba(251,191,36,0.1)' : 'rgba(248,113,113,0.1)', padding: '2px 8px', borderRadius: '6px' }}>{p.difficulty}</span>
                                             </div>
                                         )
@@ -412,6 +442,7 @@ function CreateContestModal({ onClose, onCreate }) {
                                                     {sel && <CheckCircle size={12} style={{ color: '#0b1a14' }} />}
                                                 </div>
                                                 <span style={{ flex: 1, fontSize: '14px', color: '#e5e7eb', fontWeight: 500 }}>{p.id}. {p.title}</span>
+                                                <span style={{ fontSize: '11px', color: '#9ca3af', background: 'rgba(255,255,255,0.04)', padding: '2px 8px', borderRadius: '6px', fontWeight: 700 }}>{p.domain}</span>
                                                 <span style={{ fontSize: '12px', fontWeight: 600, color: p.difficulty === 'Easy' ? '#34d399' : p.difficulty === 'Medium' ? '#fbbf24' : '#f87171', background: p.difficulty === 'Easy' ? 'rgba(52,211,153,0.1)' : p.difficulty === 'Medium' ? 'rgba(251,191,36,0.1)' : 'rgba(248,113,113,0.1)', padding: '2px 8px', borderRadius: '6px' }}>{p.difficulty}</span>
                                             </div>
                                         )
@@ -424,7 +455,7 @@ function CreateContestModal({ onClose, onCreate }) {
                         {step2Tab === 'create' && (
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                                 <div style={{ background: 'rgba(192,132,252,0.05)', border: '1px solid rgba(192,132,252,0.15)', borderRadius: '12px', padding: '12px 16px', fontSize: '13px', color: '#c084fc', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                    <Sparkles size={14} /> Define a custom problem. It will be auto-added to this contest.
+                                    <Sparkles size={14} /> Define a custom {form.domain} problem. It will be auto-added to this contest.
                                 </div>
                                 {/* Title + Difficulty */}
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '12px' }}>

@@ -182,6 +182,7 @@ function CTFIllustration() {
 const domainCards = [
     {
         title: 'COMPETITIVE PROGRAMMING (DSA)',
+        href: '/problems?domain=DSA',
         borderColor: 'border-green-500/50',
         titleColor: '#4ade80',
         badgeColor: '#4ade80',
@@ -189,6 +190,7 @@ const domainCards = [
     },
     {
         title: 'MACHINE LEARNING (DATA SCIENCE)',
+        href: '/problems?domain=ML',
         borderColor: 'border-sky-400/50',
         titleColor: '#38bdf8',
         badgeColor: '#38bdf8',
@@ -196,6 +198,7 @@ const domainCards = [
     },
     {
         title: 'CYBERSECURITY (CTF)',
+        href: '/problems?domain=CTF',
         borderColor: 'border-amber-500/50',
         titleColor: '#f59e0b',
         badgeColor: '#f59e0b',
@@ -325,7 +328,7 @@ export default function Landing() {
                         <div className="absolute left-6 top-[calc(2vh+80px)] bottom-[80px] w-[2px] bg-gradient-to-b from-green-500/30 via-sky-400/30 to-amber-500/30 hidden lg:block" />
 
                         <div className="flex flex-col gap-5">
-                            {domainCards.map(({ title, borderColor, titleColor, badgeColor, Illustration }, idx) => {
+                            {domainCards.map(({ title, href, borderColor, titleColor, badgeColor, Illustration }, idx) => {
                                 const glowMap = {
                                     'Competitive Programming (DSA)': '0 0 30px rgba(34,197,94,0.15), 0 0 60px rgba(34,197,94,0.05)',
                                     'Machine Learning (Data Science)': '0 0 30px rgba(56,189,248,0.12), 0 0 60px rgba(56,189,248,0.04)',
@@ -337,47 +340,49 @@ export default function Landing() {
                                         {idx > 0 && (
                                             <div className="absolute left-6 top-1/2 w-8 h-[2px] hidden lg:block" style={{ background: titleColor, opacity: 0.3 }} />
                                         )}
-                                        <div
-                                            className={`relative rounded-xl border ${borderColor} px-6 py-6 md:px-8 md:py-8 transition-all duration-300 hover:scale-[1.01]`}
-                                            style={{
-                                                background: 'linear-gradient(180deg, rgba(30,36,44,0.7) 0%, rgba(20,25,31,0.9) 100%)',
-                                                backdropFilter: 'blur(16px)',
-                                                boxShadow: `0 0 30px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.1), ${glowMap[title] || 'none'}`,
-                                            }}
-                                        >
+                                        <Link to={href} className="block" style={{ textDecoration: 'none' }}>
                                             <div
-                                                className="absolute inset-0 pointer-events-none rounded-xl"
+                                                className={`relative rounded-xl border ${borderColor} px-6 py-6 md:px-8 md:py-8 transition-all duration-300 hover:scale-[1.01]`}
                                                 style={{
-                                                    boxShadow: `inset 0 0 90px ${
-                                                        title.includes('COMPETITIVE') ? 'rgba(74,222,128,0.06)' :
-                                                        title.includes('MACHINE') ? 'rgba(56,189,248,0.06)' :
-                                                        'rgba(245,158,11,0.06)'
-                                                    }`,
+                                                    background: 'linear-gradient(180deg, rgba(30,36,44,0.7) 0%, rgba(20,25,31,0.9) 100%)',
+                                                    backdropFilter: 'blur(16px)',
+                                                    boxShadow: `0 0 30px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.1), ${glowMap[title] || 'none'}`,
                                                 }}
-                                            />
-                                            {/* Problems Solved / Global Rank badge */}
-                                            <div className="absolute top-4 right-5 md:top-5 md:right-6 text-right flex items-start gap-1.5">
-                                                <svg viewBox="0 0 16 16" className="w-3 h-3 mt-0.5 flex-shrink-0" style={{ color: badgeColor, opacity: 0.6 }}>
-                                                    <circle cx="8" cy="8" r="7" fill="none" stroke="currentColor" strokeWidth="1.5" />
-                                                    <text x="8" y="11" textAnchor="middle" fill="currentColor" fontSize="9" fontWeight="bold">i</text>
-                                                </svg>
-                                                <div>
-                                                    <p className="text-[10px] font-medium tracking-wider leading-relaxed" style={{ color: badgeColor, opacity: 0.7 }}>Problems Solved:</p>
-                                                    <p className="text-[10px] font-medium tracking-wider leading-relaxed" style={{ color: badgeColor, opacity: 0.7 }}>Global Rank:</p>
-                                                </div>
-                                            </div>
-
-                                            {/* Title — larger and centered */}
-                                            <h3
-                                                className="text-base md:text-lg font-bold tracking-[0.12em] uppercase text-center"
-                                                style={{ color: titleColor }}
                                             >
-                                                {title}
-                                            </h3>
+                                                <div
+                                                    className="absolute inset-0 pointer-events-none rounded-xl"
+                                                    style={{
+                                                        boxShadow: `inset 0 0 90px ${
+                                                            title.includes('COMPETITIVE') ? 'rgba(74,222,128,0.06)' :
+                                                            title.includes('MACHINE') ? 'rgba(56,189,248,0.06)' :
+                                                            'rgba(245,158,11,0.06)'
+                                                        }`,
+                                                    }}
+                                                />
+                                                {/* Problems Solved / Global Rank badge */}
+                                                <div className="absolute top-4 right-5 md:top-5 md:right-6 text-right flex items-start gap-1.5">
+                                                    <svg viewBox="0 0 16 16" className="w-3 h-3 mt-0.5 flex-shrink-0" style={{ color: badgeColor, opacity: 0.6 }}>
+                                                        <circle cx="8" cy="8" r="7" fill="none" stroke="currentColor" strokeWidth="1.5" />
+                                                        <text x="8" y="11" textAnchor="middle" fill="currentColor" fontSize="9" fontWeight="bold">i</text>
+                                                    </svg>
+                                                    <div>
+                                                        <p className="text-[10px] font-medium tracking-wider leading-relaxed" style={{ color: badgeColor, opacity: 0.7 }}>Problems Solved:</p>
+                                                        <p className="text-[10px] font-medium tracking-wider leading-relaxed" style={{ color: badgeColor, opacity: 0.7 }}>Global Rank:</p>
+                                                    </div>
+                                                </div>
 
-                                            {/* Illustration */}
-                                            <Illustration />
-                                        </div>
+                                                {/* Title — larger and centered */}
+                                                <h3
+                                                    className="text-base md:text-lg font-bold tracking-[0.12em] uppercase text-center"
+                                                    style={{ color: titleColor }}
+                                                >
+                                                    {title}
+                                                </h3>
+
+                                                {/* Illustration */}
+                                                <Illustration />
+                                            </div>
+                                        </Link>
                                     </div>
                                 )
                             })}

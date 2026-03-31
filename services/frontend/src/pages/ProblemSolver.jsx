@@ -5,6 +5,7 @@ import Editor from '@monaco-editor/react'
 import { ArrowLeft, ChevronLeft, ChevronRight, Shuffle, Play, Pause, Square, Upload, Clock, Settings, Check, X, Tag, Code2, FileText, MessageSquare, History, Maximize2, Minimize2, RotateCcw, RotateCw, Terminal, Bookmark, Star, ThumbsUp, MessageCircle, ExternalLink, Lightbulb, ChevronUp, Search, ArrowUpDown, SlidersHorizontal, User, LogOut, Palette, BarChart3, Layout, BookOpen, ChevronDown, Filter, EyeOff, Plus, Minus } from 'lucide-react'
 import useAuthStore from '../store/authStore'
 import { getProblemDetail, mockProblems } from '../utils/mockData'
+import { buildStarterCodeMap, getDefaultLanguageForDomain, getLanguagesForDomain, getStarterCodeForLanguage, languageLabelMap } from '../utils/compilerLanguages'
 import toast from 'react-hot-toast'
 
 const COLORS = {
@@ -15,14 +16,6 @@ const COLORS = {
     textMain: '#e5e7eb',
     textMuted: '#9ca3af',
 }
-
-const languages = [
-    { key: 'cpp', label: 'C++', monaco: 'cpp' },
-    { key: 'python', label: 'Python', monaco: 'python' },
-    { key: 'java', label: 'Java', monaco: 'java' },
-    { key: 'javascript', label: 'JavaScript', monaco: 'javascript' },
-    { key: 'go', label: 'Go', monaco: 'go' },
-]
 
 const domainColors = {
     DSA: { bg: 'rgba(59,130,246,0.12)', text: '#60a5fa', border: 'rgba(59,130,246,0.2)' },
@@ -42,36 +35,274 @@ const diffBg = {
     Hard: 'rgba(248,113,113,0.1)',
 }
 
+const domainLabelMap = {
+    DSA: 'DSA',
+    ML: 'Machine Learning',
+    CTF: 'Cyber Security',
+}
+
+function getRunToast(problem) {
+    if (problem.domain === 'ML') return 'Evaluation run finished'
+    if (problem.domain === 'CTF') return 'Challenge run finished'
+    return 'Test passed!'
+}
+
+function getSubmitToast(problem) {
+    if (problem.domain === 'ML') return 'Model accepted for evaluation'
+    if (problem.domain === 'CTF') return 'Finding verified'
+    return 'Solution Accepted! 🎉'
+}
+
+function getInputLabel(problem) {
+    if (problem.domain === 'ML') return 'Validation Input'
+    if (problem.domain === 'CTF') return 'Payload / Artifact'
+    return 'Custom Input'
+}
+
+function getMockRunResult(problem, lang) {
+    if (problem.domain === 'ML') {
+        if (problem.id === 15) {
+            return {
+                status: 'Accepted',
+                stdout: `[${languageLabelMap[lang]}] val_accuracy=73.4%\ntrain_loss=0.61\ncheckpoint=cnn_epoch5.pt`,
+                expected: 'Accuracy >= 70%',
+                time: '2m 18s',
+                memory: '1.3 GB',
+            }
+        }
+
+        if (problem.id === 16) {
+            return {
+                status: 'Accepted',
+                stdout: `[${languageLabelMap[lang]}] precision=0.92\nrecall=0.89\nmacro_f1=0.90`,
+                expected: 'precision / recall / f1 reported',
+                time: '1m 42s',
+                memory: '824 MB',
+            }
+        }
+
+        if (problem.id === 17) {
+            return {
+                status: 'Accepted',
+                stdout: `[${languageLabelMap[lang]}] m=0.61\nb=2.18\nmse=0.48`,
+                expected: 'm ≈ 0.6, b ≈ 2.2',
+                time: '0.8 s',
+                memory: '96 MB',
+            }
+        }
+
+        return {
+            status: 'Accepted',
+            stdout: `[${languageLabelMap[lang]}] benchmark run completed`,
+            expected: problem.testCases[0]?.expectedOutput || 'Benchmark cleared',
+            time: '1m 12s',
+            memory: '512 MB',
+        }
+    }
+
+    if (problem.domain === 'CTF') {
+        if (problem.id === 18) {
+            return {
+                status: 'Accepted',
+                stdout: `[${languageLabelMap[lang]}] suspicious_host=198.51.100.42\nflag=FLAG{covert_http_channel}`,
+                expected: 'FLAG{...}',
+                time: '1.1 s',
+                memory: '44 MB',
+            }
+        }
+
+        if (problem.id === 19) {
+            return {
+                status: 'Accepted',
+                stdout: `[${languageLabelMap[lang]}] offset=72\nsecret=0x080491d6\noutput=You got the flag!`,
+                expected: 'You got the flag!',
+                time: '0.9 s',
+                memory: '28 MB',
+            }
+        }
+
+        if (problem.id === 20) {
+            return {
+                status: 'Accepted',
+                stdout: `[${languageLabelMap[lang]}] bypass=ok\ntable=users\nadmin_hash=5f4dcc3b5aa765d61d8327deb882cf99`,
+                expected: 'Login bypassed',
+                time: '0.6 s',
+                memory: '24 MB',
+            }
+        }
+
+        return {
+            status: 'Accepted',
+            stdout: `[${languageLabelMap[lang]}] challenge verification completed`,
+            expected: problem.testCases[0]?.expectedOutput || 'Flag recovered',
+            time: '1.0 s',
+            memory: '32 MB',
+        }
+    }
+
+    return {
+        status: 'Accepted',
+        stdout: '[0, 1]',
+        expected: '[0,1]',
+        time: '4ms',
+        memory: '8.2 MB',
+    }
+}
+
+function getMockSubmitResult(problem, lang) {
+    if (problem.domain === 'ML') {
+        if (problem.id === 15) {
+            return {
+                status: 'Accepted',
+                stdout: `[${languageLabelMap[lang]}] hidden_test_accuracy=72.8%\nartifacts=model.pt, metrics.json`,
+                expected: 'Hidden benchmark passed',
+                time: '2m 44s',
+                memory: '1.4 GB',
+                allPassed: true,
+            }
+        }
+
+        if (problem.id === 16) {
+            return {
+                status: 'Accepted',
+                stdout: `[${languageLabelMap[lang]}] holdout_macro_f1=0.91\nreport_schema=pass`,
+                expected: 'Hidden benchmark passed',
+                time: '1m 58s',
+                memory: '880 MB',
+                allPassed: true,
+            }
+        }
+
+        if (problem.id === 17) {
+            return {
+                status: 'Accepted',
+                stdout: `[${languageLabelMap[lang]}] recovered_m=0.60\nrecovered_b=2.20\nplot_artifact=pass`,
+                expected: 'Hidden benchmark passed',
+                time: '1.0 s',
+                memory: '102 MB',
+                allPassed: true,
+            }
+        }
+
+        return {
+            status: 'Accepted',
+            stdout: `[${languageLabelMap[lang]}] model package accepted`,
+            expected: 'Hidden benchmark passed',
+            time: '1m 30s',
+            memory: '640 MB',
+            allPassed: true,
+        }
+    }
+
+    if (problem.domain === 'CTF') {
+        if (problem.id === 18) {
+            return {
+                status: 'Accepted',
+                stdout: `[${languageLabelMap[lang]}] flag verified\nFLAG{covert_http_channel}`,
+                expected: 'Flag verified',
+                time: '1.2 s',
+                memory: '44 MB',
+                allPassed: true,
+            }
+        }
+
+        if (problem.id === 19) {
+            return {
+                status: 'Accepted',
+                stdout: `[${languageLabelMap[lang]}] replay succeeded\nYou got the flag!`,
+                expected: 'Exploit replayed',
+                time: '1.0 s',
+                memory: '29 MB',
+                allPassed: true,
+            }
+        }
+
+        if (problem.id === 20) {
+            return {
+                status: 'Accepted',
+                stdout: `[${languageLabelMap[lang]}] injection chain replayed\nadmin secret extracted`,
+                expected: 'Verifier accepted finding',
+                time: '0.7 s',
+                memory: '25 MB',
+                allPassed: true,
+            }
+        }
+
+        return {
+            status: 'Accepted',
+            stdout: `[${languageLabelMap[lang]}] challenge solved`,
+            expected: 'Verifier accepted finding',
+            time: '1.1 s',
+            memory: '32 MB',
+            allPassed: true,
+        }
+    }
+
+    return {
+        status: 'Accepted',
+        stdout: 'All test cases passed',
+        expected: '—',
+        time: '4ms',
+        memory: '8.2 MB',
+        allPassed: true,
+    }
+}
+
+function getMockSubmissions(problem) {
+    if (problem.domain === 'ML') {
+        return [
+            { id: 1, status: 'Accepted', language: 'Python', runtime: '2m 44s', memory: '1.4 GB', timestamp: '2026-03-28 22:14', beats: 'top 18%' },
+            { id: 2, status: 'Wrong Answer', language: 'R', runtime: '—', memory: '—', timestamp: '2026-03-28 21:50', beats: null },
+            { id: 3, status: 'Accepted', language: 'SQL', runtime: '1m 58s', memory: '880 MB', timestamp: '2026-03-27 14:32', beats: 'top 24%' },
+            { id: 4, status: 'Time Limit Exceeded', language: 'Julia', runtime: '—', memory: '—', timestamp: '2026-03-26 11:05', beats: null },
+        ]
+    }
+
+    if (problem.domain === 'CTF') {
+        return [
+            { id: 1, status: 'Accepted', language: 'Python', runtime: '1.2 s', memory: '44 MB', timestamp: '2026-03-28 22:14', beats: 'top 12%' },
+            { id: 2, status: 'Wrong Answer', language: 'Bash', runtime: '—', memory: '—', timestamp: '2026-03-28 21:50', beats: null },
+            { id: 3, status: 'Accepted', language: 'C', runtime: '0.9 s', memory: '29 MB', timestamp: '2026-03-27 14:32', beats: 'top 21%' },
+            { id: 4, status: 'Time Limit Exceeded', language: 'PowerShell', runtime: '—', memory: '—', timestamp: '2026-03-26 11:05', beats: null },
+        ]
+    }
+
+    return [
+        { id: 1, status: 'Accepted', language: 'C++', runtime: '4 ms', memory: '8.2 MB', timestamp: '2026-03-28 22:14', beats: '95.3%' },
+        { id: 2, status: 'Wrong Answer', language: 'Python', runtime: '—', memory: '—', timestamp: '2026-03-28 21:50', beats: null },
+        { id: 3, status: 'Accepted', language: 'C++', runtime: '8 ms', memory: '9.1 MB', timestamp: '2026-03-27 14:32', beats: '82.1%' },
+        { id: 4, status: 'Time Limit Exceeded', language: 'Java', runtime: '—', memory: '—', timestamp: '2026-03-26 11:05', beats: null },
+        { id: 5, status: 'Accepted', language: 'JavaScript', runtime: '12 ms', memory: '10.4 MB', timestamp: '2026-03-25 09:18', beats: '74.6%' },
+    ]
+}
+
 export default function ProblemSolver() {
     const { id } = useParams()
     const navigate = useNavigate()
     const [searchParams] = useSearchParams()
     const topicParam = searchParams.get('topic')
     const listParam = searchParams.get('list')
-    
-    const { user } = useAuthStore()
-    const problem = useMemo(() => getProblemDetail(id) || getProblemDetail(1), [id])
+    const domainParam = searchParams.get('domain')
 
-    const [lang, setLang] = useState('cpp')
+    const { user, logout } = useAuthStore()
+    const problem = useMemo(() => getProblemDetail(id) || getProblemDetail(1), [id])
+    const availableLanguages = useMemo(() => getLanguagesForDomain(problem.domain), [problem.domain])
+
+    const [lang, setLang] = useState(getDefaultLanguageForDomain(problem.domain))
     const [codes, setCodes] = useState(
-        languages.reduce((acc, l) => ({ ...acc, [l.key]: problem.starterCode[l.key] || '' }), {})
+        buildStarterCodeMap(problem)
     )
     const [descTab, setDescTab] = useState('description')
 
-    const mockSubmissions = useMemo(() => [
-        { id: 1, status: 'Accepted', language: 'C++', runtime: '4 ms', memory: '8.2 MB', timestamp: '2026-03-28 22:14', beats: '95.3%' },
-        { id: 2, status: 'Wrong Answer', language: 'Python', runtime: '—', memory: '—', timestamp: '2026-03-28 21:50', beats: null },
-        { id: 3, status: 'Accepted', language: 'C++', runtime: '8 ms', memory: '9.1 MB', timestamp: '2026-03-27 14:32', beats: '82.1%' },
-        { id: 4, status: 'Time Limit Exceeded', language: 'Java', runtime: '—', memory: '—', timestamp: '2026-03-26 11:05', beats: null },
-        { id: 5, status: 'Accepted', language: 'JavaScript', runtime: '12 ms', memory: '10.4 MB', timestamp: '2026-03-25 09:18', beats: '74.6%' },
-    ], [])
+    const mockSubmissions = useMemo(() => getMockSubmissions(problem), [problem])
     const [bottomTab, setBottomTab] = useState('testcase')
     const [testInput, setTestInput] = useState(problem.testCases[0]?.input || '')
     const [testResult, setTestResult] = useState(null)
 
     // Reset code and test input when problem changes
     useEffect(() => {
-        setCodes(languages.reduce((acc, l) => ({ ...acc, [l.key]: problem.starterCode[l.key] || '' }), {}))
+        setLang(getDefaultLanguageForDomain(problem.domain))
+        setCodes(buildStarterCodeMap(problem))
         setTestInput(problem.testCases[0]?.input || '')
         setTestResult(null)
         setDescTab('description')
@@ -98,18 +329,19 @@ export default function ProblemSolver() {
     const contextProblems = useMemo(() => {
         if (listParam === 'bookmarks') return mockProblems.filter(p => p.starred)
         if (topicParam) return mockProblems.filter(p => (p.tags || []).includes(decodeURIComponent(topicParam)))
+        if (domainParam) return mockProblems.filter(p => p.domain === domainParam)
         return mockProblems
-    }, [topicParam, listParam])
+    }, [topicParam, listParam, domainParam])
 
     const solvedCount = useMemo(() => contextProblems.filter(p => p.status === 'solved').length, [contextProblems])
-    
+
     // Advanced Sort & Filter State for Sidebar
     const [sortConfig, setSortConfig] = useState({ key: 'custom', direction: 'asc' })
     const [filterMatchMode, setFilterMatchMode] = useState('All')
     const [filterRules, setFilterRules] = useState([])
     const [isSortMenuOpen, setIsSortMenuOpen] = useState(false)
     const [isFilterMenuOpen, setIsFilterMenuOpen] = useState(false)
-    
+
     // Helper for filter options
     const FILTER_FIELDS = {
         'Status': ['Solved', 'Attempted', 'Unsolved'],
@@ -117,7 +349,7 @@ export default function ProblemSolver() {
         'List': ['Starred', 'Not Starred'],
     }
     const FILTER_OPERATORS = ['is', 'is not']
-    
+
     const addRule = () => {
         if (filterRules.length >= 6) return toast.error('Maximum of 6 filter rules allowed')
         const newId = filterRules.length > 0 ? Math.max(...filterRules.map(r => r.id)) + 1 : 1
@@ -182,13 +414,15 @@ export default function ProblemSolver() {
 
         return result
     }, [problemSearch, contextProblems, filterRules, filterMatchMode, sortConfig])
-    
+
     // Helper to preserve context when navigating
     const navigateWithContext = (newId) => {
         if (listParam) {
             navigate(`/problems/${newId}?list=${listParam}`)
         } else if (topicParam) {
             navigate(`/problems/${newId}?topic=${topicParam}`)
+        } else if (domainParam) {
+            navigate(`/problems/${newId}?domain=${domainParam}`)
         } else {
             navigate(`/problems/${newId}`)
         }
@@ -224,9 +458,9 @@ export default function ProblemSolver() {
 
     const handleFullscreen = () => {
         if (!document.fullscreenElement) {
-            document.documentElement.requestFullscreen().catch(() => {})
+            document.documentElement.requestFullscreen().catch(() => { })
         } else {
-            document.exitFullscreen().catch(() => {})
+            document.exitFullscreen().catch(() => { })
         }
     }
 
@@ -246,7 +480,7 @@ export default function ProblemSolver() {
     }
 
     const handleReset = () => {
-        const starter = problem.starterCode[lang] || ''
+        const starter = getStarterCodeForLanguage(problem, lang)
         setCodes((prev) => ({ ...prev, [lang]: starter }))
         toast('Code reset to starter template', {
             icon: '↺',
@@ -305,15 +539,9 @@ export default function ProblemSolver() {
         setRunning(true)
         setBottomTab('result')
         setTimeout(() => {
-            setTestResult({
-                status: 'Accepted',
-                stdout: '[0, 1]',
-                expected: '[0,1]',
-                time: '4ms',
-                memory: '8.2 MB',
-            })
+            setTestResult(getMockRunResult(problem, lang))
             setRunning(false)
-            toast.success('Test passed!', {
+            toast.success(getRunToast(problem), {
                 style: { background: 'rgba(30,36,44,0.95)', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' }
             })
         }, 1500)
@@ -323,16 +551,9 @@ export default function ProblemSolver() {
         setRunning(true)
         setBottomTab('result')
         setTimeout(() => {
-            setTestResult({
-                status: 'Accepted',
-                stdout: 'All test cases passed',
-                expected: '—',
-                time: '4ms',
-                memory: '8.2 MB',
-                allPassed: true,
-            })
+            setTestResult(getMockSubmitResult(problem, lang))
             setRunning(false)
-            toast.success('Solution Accepted! 🎉', {
+            toast.success(getSubmitToast(problem), {
                 style: { background: 'rgba(30,36,44,0.95)', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' }
             })
         }, 2000)
@@ -344,7 +565,7 @@ export default function ProblemSolver() {
         { key: 'submissions', label: 'Submissions', icon: History },
     ]
 
-    const currentLang = languages.find(l => l.key === lang)
+    const currentLang = availableLanguages.find(l => l.key === lang) || availableLanguages[0]
 
     return (
         <div style={{
@@ -366,7 +587,7 @@ export default function ProblemSolver() {
                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                     {/* Back arrow — navigates to /problems */}
                     <button
-                        onClick={() => navigate('/problems')}
+                        onClick={() => navigate(domainParam ? `/problems?domain=${encodeURIComponent(domainParam)}` : '/problems')}
                         style={{
                             display: 'flex', alignItems: 'center', justifyContent: 'center',
                             width: '28px', height: '28px', borderRadius: '6px',
@@ -398,31 +619,37 @@ export default function ProblemSolver() {
                     </button>
                     <div style={{ width: '1px', height: '16px', backgroundColor: 'rgba(255,255,255,0.08)', margin: '0 4px' }} />
                     {[
-                        { icon: ChevronLeft, title: 'Previous problem', onClick: () => {
-                            const idx = contextProblems.findIndex(p => String(p.id) === String(id))
-                            if (idx > 0) navigateWithContext(contextProblems[idx - 1].id)
-                            else if (contextProblems.length > 0) navigateWithContext(contextProblems[contextProblems.length - 1].id)
-                        }},
-                        { icon: ChevronRight, title: 'Next problem', onClick: () => {
-                            const idx = contextProblems.findIndex(p => String(p.id) === String(id))
-                            if (idx < contextProblems.length - 1 && idx !== -1) navigateWithContext(contextProblems[idx + 1].id)
-                            else if (contextProblems.length > 0) navigateWithContext(contextProblems[0].id)
-                        }},
-                        { icon: Shuffle, title: 'Random problem', onClick: () => {
-                            const others = contextProblems.filter(p => String(p.id) !== String(id))
-                            if (others.length > 0) {
-                                const random = others[Math.floor(Math.random() * others.length)]
-                                navigateWithContext(random.id)
+                        {
+                            icon: ChevronLeft, title: 'Previous problem', onClick: () => {
+                                const idx = contextProblems.findIndex(p => String(p.id) === String(id))
+                                if (idx > 0) navigateWithContext(contextProblems[idx - 1].id)
+                                else if (contextProblems.length > 0) navigateWithContext(contextProblems[contextProblems.length - 1].id)
                             }
-                        }},
+                        },
+                        {
+                            icon: ChevronRight, title: 'Next problem', onClick: () => {
+                                const idx = contextProblems.findIndex(p => String(p.id) === String(id))
+                                if (idx < contextProblems.length - 1 && idx !== -1) navigateWithContext(contextProblems[idx + 1].id)
+                                else if (contextProblems.length > 0) navigateWithContext(contextProblems[0].id)
+                            }
+                        },
+                        {
+                            icon: Shuffle, title: 'Random problem', onClick: () => {
+                                const others = contextProblems.filter(p => String(p.id) !== String(id))
+                                if (others.length > 0) {
+                                    const random = others[Math.floor(Math.random() * others.length)]
+                                    navigateWithContext(random.id)
+                                }
+                            }
+                        },
                     ].map((btn, i) => (
                         <button key={i} onClick={btn.onClick} title={btn.title} style={{
                             display: 'flex', alignItems: 'center', justifyContent: 'center',
                             width: '28px', height: '28px', borderRadius: '6px', color: '#6b7280',
                             background: 'transparent', border: 'none', cursor: 'pointer', transition: 'all 0.2s'
                         }}
-                        onMouseEnter={(e) => { e.currentTarget.style.color = '#e5e7eb'; e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.06)' }}
-                        onMouseLeave={(e) => { e.currentTarget.style.color = '#6b7280'; e.currentTarget.style.backgroundColor = 'transparent' }}
+                            onMouseEnter={(e) => { e.currentTarget.style.color = '#e5e7eb'; e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.06)' }}
+                            onMouseLeave={(e) => { e.currentTarget.style.color = '#6b7280'; e.currentTarget.style.backgroundColor = 'transparent' }}
                         >
                             <btn.icon style={{ width: '14px', height: '14px' }} />
                         </button>
@@ -447,8 +674,8 @@ export default function ProblemSolver() {
                         color: '#d1d5db', cursor: running ? 'default' : 'pointer', opacity: running ? 0.5 : 1,
                         transition: 'all 0.2s', letterSpacing: '0.02em'
                     }}
-                    onMouseEnter={(e) => { if (!running) e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.08)' }}
-                    onMouseLeave={(e) => { if (!running) e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.04)' }}
+                        onMouseEnter={(e) => { if (!running) e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.08)' }}
+                        onMouseLeave={(e) => { if (!running) e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.04)' }}
                     >
                         <Play style={{ width: '12px', height: '12px', fill: '#34d399', color: '#34d399' }} /> Run
                     </button>
@@ -462,8 +689,8 @@ export default function ProblemSolver() {
                         transition: 'all 0.2s', letterSpacing: '0.02em',
                         boxShadow: '0 2px 8px rgba(52,211,153,0.15)'
                     }}
-                    onMouseEnter={(e) => { if (!running) e.currentTarget.style.boxShadow = '0 4px 16px rgba(52,211,153,0.25)' }}
-                    onMouseLeave={(e) => { if (!running) e.currentTarget.style.boxShadow = '0 2px 8px rgba(52,211,153,0.15)' }}
+                        onMouseEnter={(e) => { if (!running) e.currentTarget.style.boxShadow = '0 4px 16px rgba(52,211,153,0.25)' }}
+                        onMouseLeave={(e) => { if (!running) e.currentTarget.style.boxShadow = '0 2px 8px rgba(52,211,153,0.15)' }}
                     >
                         <Upload style={{ width: '12px', height: '12px' }} /> Submit
                     </button>
@@ -537,12 +764,12 @@ export default function ProblemSolver() {
                                 transition: 'box-shadow 0.2s'
                             }}>
                                 {user?.avatar ? (
-                                <img src={user.avatar} alt="Avatar" className="w-8 h-8 rounded-full object-cover border border-emerald-500/50 shadow-[0_0_10px_rgba(74,222,128,0.2)]" />
-                            ) : (
-                                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-green-400 to-emerald-600 flex items-center justify-center text-sm font-bold text-slate-900 shadow-[0_0_10px_rgba(74,222,128,0.3)]">
-                                    {user?.displayName?.[0] || 'U'}
-                                </div>
-                            )}
+                                    <img src={user.avatar} alt="Avatar" className="w-8 h-8 rounded-full object-cover border border-emerald-500/50 shadow-[0_0_10px_rgba(74,222,128,0.2)]" />
+                                ) : (
+                                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-green-400 to-emerald-600 flex items-center justify-center text-sm font-bold text-slate-900 shadow-[0_0_10px_rgba(74,222,128,0.3)]">
+                                        {user?.displayName?.[0] || 'U'}
+                                    </div>
+                                )}
                             </div>
                         </button>
 
@@ -616,8 +843,8 @@ export default function ProblemSolver() {
                                             background: 'rgba(255,255,255,0.02)', border: '1px solid transparent',
                                             cursor: 'pointer', transition: 'all 0.2s',
                                         }}
-                                        onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(52,211,153,0.08)'; e.currentTarget.style.borderColor = 'rgba(52,211,153,0.2)' }}
-                                        onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.02)'; e.currentTarget.style.borderColor = 'transparent' }}
+                                            onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(52,211,153,0.08)'; e.currentTarget.style.borderColor = 'rgba(52,211,153,0.2)' }}
+                                            onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.02)'; e.currentTarget.style.borderColor = 'transparent' }}
                                         >
                                             <Icon style={{ width: '16px', height: '16px', color: '#6b7280' }} />
                                             <span style={{ fontSize: '9px', fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{label}</span>
@@ -641,8 +868,8 @@ export default function ProblemSolver() {
                                             fontSize: '13.5px', fontWeight: 500, color: '#d1d5db',
                                             transition: 'all 0.15s', textAlign: 'left',
                                         }}
-                                        onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.06)'; e.currentTarget.style.color = '#fff' }}
-                                        onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = '#d1d5db' }}
+                                            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.06)'; e.currentTarget.style.color = '#fff' }}
+                                            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = '#d1d5db' }}
                                         >
                                             <Icon style={{ width: '16px', height: '16px', color: '#9ca3af' }} />
                                             {label}
@@ -786,11 +1013,11 @@ export default function ProblemSolver() {
                                                         const isActive = sortConfig.key === opt.key
                                                         return (
                                                             <React.Fragment key={opt.key}>
-                                                                <button onClick={() => { 
+                                                                <button onClick={() => {
                                                                     if (isActive && opt.key !== 'custom') setSortConfig({ key: opt.key, direction: sortConfig.direction === 'asc' ? 'desc' : 'asc' })
                                                                     else setSortConfig({ key: opt.key, direction: opt.key === 'acceptance' ? 'desc' : 'asc' })
                                                                 }} style={{
-                                                                    padding: '8px 16px', background: 'transparent', border: 'none', 
+                                                                    padding: '8px 16px', background: 'transparent', border: 'none',
                                                                     cursor: 'pointer', width: '100%',
                                                                     display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                                                                     transition: 'all 0.15s'
@@ -969,8 +1196,8 @@ export default function ProblemSolver() {
                                     width: '26px', height: '26px', borderRadius: '6px', color: '#6b7280',
                                     background: 'transparent', border: 'none', cursor: 'pointer', transition: 'all 0.15s'
                                 }}
-                                onMouseEnter={(e) => { e.currentTarget.style.color = '#d1d5db'; e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)' }}
-                                onMouseLeave={(e) => { e.currentTarget.style.color = '#6b7280'; e.currentTarget.style.backgroundColor = 'transparent' }}
+                                    onMouseEnter={(e) => { e.currentTarget.style.color = '#d1d5db'; e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)' }}
+                                    onMouseLeave={(e) => { e.currentTarget.style.color = '#6b7280'; e.currentTarget.style.backgroundColor = 'transparent' }}
                                 >
                                     <Maximize2 style={{ width: '13px', height: '13px' }} />
                                 </button>
@@ -1003,7 +1230,7 @@ export default function ProblemSolver() {
                                             backgroundColor: domainColors[problem.domain].bg,
                                             border: `1px solid ${domainColors[problem.domain].border}`,
                                         }}>
-                                            {problem.domain}
+                                            {domainLabelMap[problem.domain] || problem.domain}
                                         </span>
                                         {problem.tags.map((t) => (
                                             <span key={t} style={{
@@ -1121,8 +1348,8 @@ export default function ProblemSolver() {
                                                 color: item.active ? item.activeColor : '#6b7280',
                                                 background: 'none', border: 'none', cursor: 'pointer', transition: 'all 0.2s', padding: '4px'
                                             }}
-                                            onMouseEnter={(e) => e.currentTarget.style.color = item.active ? item.activeColor : '#d1d5db'}
-                                            onMouseLeave={(e) => e.currentTarget.style.color = item.active ? item.activeColor : '#6b7280'}
+                                                onMouseEnter={(e) => e.currentTarget.style.color = item.active ? item.activeColor : '#d1d5db'}
+                                                onMouseLeave={(e) => e.currentTarget.style.color = item.active ? item.activeColor : '#6b7280'}
                                             >
                                                 <item.icon style={{ width: '14px', height: '14px', fill: item.active ? item.activeColor : 'none' }} /> {item.label}
                                             </button>
@@ -1178,12 +1405,12 @@ export default function ProblemSolver() {
                                             const isAccepted = sub.status === 'Accepted'
                                             const statusColor = isAccepted ? '#34d399'
                                                 : sub.status === 'Wrong Answer' ? '#f87171'
-                                                : sub.status === 'Time Limit Exceeded' ? '#fbbf24'
-                                                : '#9ca3af'
+                                                    : sub.status === 'Time Limit Exceeded' ? '#fbbf24'
+                                                        : '#9ca3af'
                                             const statusBg = isAccepted ? 'rgba(52,211,153,0.08)'
                                                 : sub.status === 'Wrong Answer' ? 'rgba(248,113,113,0.08)'
-                                                : sub.status === 'Time Limit Exceeded' ? 'rgba(251,191,36,0.08)'
-                                                : 'rgba(255,255,255,0.04)'
+                                                    : sub.status === 'Time Limit Exceeded' ? 'rgba(251,191,36,0.08)'
+                                                        : 'rgba(255,255,255,0.04)'
                                             return (
                                                 <div key={sub.id} style={{
                                                     display: 'grid',
@@ -1195,8 +1422,8 @@ export default function ProblemSolver() {
                                                     borderRadius: '6px',
                                                     cursor: 'pointer',
                                                 }}
-                                                onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.02)'}
-                                                onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                                                    onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.02)'}
+                                                    onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                                                 >
                                                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                                         <span style={{
@@ -1288,7 +1515,7 @@ export default function ProblemSolver() {
                                                     backdropFilter: 'blur(16px)', border: '1px solid rgba(255,255,255,0.1)',
                                                     boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
                                                 }}>
-                                                    {languages.map((l) => (
+                                                    {availableLanguages.map((l) => (
                                                         <button key={l.key} onClick={() => { setLang(l.key); setLangDropdownOpen(false) }}
                                                             style={{
                                                                 display: 'flex', alignItems: 'center', justifyContent: 'space-between',
@@ -1458,7 +1685,7 @@ export default function ProblemSolver() {
                                 <div style={{ flex: 1, overflowY: 'auto', padding: '14px 16px' }}>
                                     {bottomTab === 'testcase' && (
                                         <div>
-                                            <p style={{ fontSize: '11.5px', fontWeight: 600, color: '#9ca3af', marginBottom: '8px', letterSpacing: '0.04em', textTransform: 'uppercase' }}>Custom Input:</p>
+                                            <p style={{ fontSize: '11.5px', fontWeight: 600, color: '#9ca3af', marginBottom: '8px', letterSpacing: '0.04em', textTransform: 'uppercase' }}>{getInputLabel(problem)}:</p>
                                             <textarea
                                                 value={testInput}
                                                 onChange={(e) => setTestInput(e.target.value)}

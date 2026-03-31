@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
     Shield, ChevronLeft, ChevronRight, Clock, Send, CheckCircle,
@@ -6,7 +6,9 @@ import {
     RotateCcw, Maximize2, Minimize2, ChevronDown, Code2, Target
 } from 'lucide-react'
 import useContestStore from '../store/contestStore'
-import { mockProblems, getProblemDetail } from '../utils/mockData'
+import useAuthStore from '../store/authStore'
+import { getProblemDetail } from '../utils/mockData'
+import { getDefaultLanguageForDomain, getLanguagesForDomain, getStarterCodeForLanguage } from '../utils/compilerLanguages'
 
 // ─── Countdown Timer ──────────────────────────────────────────────────────────
 function useContestTimer(startedAt, durationMin) {
@@ -24,7 +26,18 @@ function useContestTimer(startedAt, durationMin) {
 }
 
 // ─── Languages ────────────────────────────────────────────────────────────────
-const LANGS = ['python', 'cpp', 'java', 'javascript', 'go']
+function formatAccuracy(value) {
+    return `${(value * 100).toFixed(2)}%`
+}
+
+function formatElapsed(seconds) {
+    const hours = Math.floor(seconds / 3600)
+    const minutes = Math.floor((seconds % 3600) / 60)
+    const secs = seconds % 60
+    if (hours > 0) return `${hours}h ${String(minutes).padStart(2, '0')}m`
+    if (minutes > 0) return `${minutes}m ${secs}s`
+    return `${secs}s`
+}
 
 // ─── Submission status pill ───────────────────────────────────────────────────
 const statusMeta = {
@@ -49,7 +62,8 @@ function StatusPill({ status }) {
 export default function ContestArena() {
     const { contestId } = useParams()
     const navigate = useNavigate()
-    const { getContest, activeAttempt, saveAnswer, endAttempt } = useContestStore()
+    const { user } = useAuthStore()
+    const { getContest, getProblemsForContest, activeAttempt, saveAnswer, endAttempt, recordContestResult } = useContestStore()
     const contest = getContest(contestId)
 
     const [problemIdx, setProblemIdx] = useState(0)
@@ -76,18 +90,28 @@ export default function ContestArena() {
     }, [activeAttempt, contestId])
 
     if (!contest) return null
-    const problemIds = contest.problemIds || []
-    const problems = mockProblems.filter(p => problemIds.includes(p.id))
+    const problems = getProblemsForContest(contest)
     const currentProblem = problems[problemIdx]
-    const detail = currentProblem ? getProblemDetail(currentProblem.id) : null
+    const detail = currentProblem ? (currentProblem.isCustom ? currentProblem : getProblemDetail(currentProblem.id)) : null
+    const contestDomain = contest.domain || problems[0]?.domain || 'DSA'
+    const isMlContest = contest.ranking === 'accuracy' || contestDomain === 'ML'
+    const availableLanguages = useMemo(() => getLanguagesForDomain(contestDomain), [contestDomain])
+    const currentLang = availableLanguages.find(language => language.key === lang) || availableLanguages[0]
+    const elapsedSeconds = Math.max(0, (contest?.duration || 90) * 60 - remaining)
 
     // Load code from answers store when switching problems
     useEffect(() => {
         if (currentProblem) {
             const saved = activeAttempt?.answers?.[currentProblem.id]?.[lang]
-            setCode(saved || detail?.starterCode?.[lang] || '')
+            setCode(saved || getStarterCodeForLanguage(detail, lang))
         }
-    }, [problemIdx, lang, currentProblem?.id])
+    }, [problemIdx, lang, currentProblem?.id, detail, activeAttempt])
+
+    useEffect(() => {
+        if (!availableLanguages.some(language => language.key === lang)) {
+            setLang(getDefaultLanguageForDomain(contestDomain))
+        }
+    }, [availableLanguages, contestDomain, lang])
 
     // Auto-save on change
     useEffect(() => {
@@ -104,28 +128,110 @@ export default function ContestArena() {
         setIsRunning(true)
         setRunOutput(null)
         setTimeout(() => {
-            const pass = Math.random() > 0.3
-            setRunOutput(pass
-                ? { type: 'success', message: '✓ All sample test cases passed!', cases: [{ input: detail?.testCases?.[0]?.input || 'sample', expected: detail?.testCases?.[0]?.expectedOutput || 'ok', got: detail?.testCases?.[0]?.expectedOutput || 'ok', passed: true }] }
-                : { type: 'error', message: '✗ Test case failed', cases: [{ input: detail?.testCases?.[0]?.input || 'sample', expected: detail?.testCases?.[0]?.expectedOutput || 'ok', got: 'null', passed: false }] }
-            )
+            if (isMlContest) {
+                const accuracy = 0.72 + Math.random() * 0.2
+                setRunOutput({
+                    type: 'success',
+                    message: `Validation complete: ${formatAccuracy(accuracy)} accuracy`,
+                    metrics: [
+                        { label: 'Accuracy', value: formatAccuracy(accuracy) },
+                        { label: 'Loss', value: (0.35 + Math.random() * 0.25).toFixed(3) },
+                        { label: 'Runtime', value: `${45 + Math.floor(Math.random() * 35)}s` },
+                    ],
+                })
+            } else {
+                const pass = Math.random() > 0.3
+                setRunOutput(pass
+                    ? { type: 'success', message: '✓ All sample test cases passed!', cases: [{ input: detail?.testCases?.[0]?.input || 'sample', expected: detail?.testCases?.[0]?.expectedOutput || 'ok', got: detail?.testCases?.[0]?.expectedOutput || 'ok', passed: true }] }
+                    : { type: 'error', message: '✗ Test case failed', cases: [{ input: detail?.testCases?.[0]?.input || 'sample', expected: detail?.testCases?.[0]?.expectedOutput || 'ok', got: 'null', passed: false }] }
+                )
+            }
             setIsRunning(false)
         }, 1400)
-    }, [detail])
+    }, [detail, isMlContest])
 
     const handleSubmit = useCallback(() => {
         if (!currentProblem) return
         setIsSubmitting(true)
         setSubmissions(s => ({ ...s, [currentProblem.id]: { status: 'submitting', time: new Date().toLocaleTimeString() } }))
         setTimeout(() => {
-            const outcomes = ['accepted', 'accepted', 'accepted', 'wrong', 'tle', 'error']
-            const outcome = outcomes[Math.floor(Math.random() * outcomes.length)]
-            setSubmissions(s => ({ ...s, [currentProblem.id]: { status: outcome, time: new Date().toLocaleTimeString() } }))
+            if (isMlContest) {
+                const accuracy = 0.74 + Math.random() * 0.21
+                setSubmissions(s => {
+                    const previous = s[currentProblem.id] || {}
+                    const previousBest = previous.accuracy || 0
+                    const nextBest = Math.max(previousBest, accuracy)
+                    const bestTimeSeconds = accuracy > previousBest
+                        ? elapsedSeconds
+                        : (previous.timeSeconds ?? elapsedSeconds)
+                    return {
+                        ...s,
+                        [currentProblem.id]: {
+                            status: 'accepted',
+                            accuracy: nextBest,
+                            lastAccuracy: accuracy,
+                            submissions: (previous.submissions || 0) + 1,
+                            time: formatElapsed(bestTimeSeconds),
+                            timeSeconds: bestTimeSeconds,
+                            lastSubmittedAt: new Date().toLocaleTimeString(),
+                        },
+                    }
+                })
+                setRunOutput({
+                    type: 'success',
+                    message: `Submission accepted at ${formatAccuracy(accuracy)}`,
+                    metrics: [
+                        { label: 'Current Accuracy', value: formatAccuracy(accuracy) },
+                        { label: 'Leaderboard Metric', value: formatAccuracy(accuracy) },
+                        { label: 'Best Time', value: formatElapsed(elapsedSeconds) },
+                    ],
+                })
+            } else {
+                const outcomes = ['accepted', 'accepted', 'accepted', 'wrong', 'tle', 'error']
+                const outcome = outcomes[Math.floor(Math.random() * outcomes.length)]
+                setSubmissions(s => ({ ...s, [currentProblem.id]: { status: outcome, time: new Date().toLocaleTimeString(), timeSeconds: elapsedSeconds } }))
+            }
             setIsSubmitting(false)
         }, 2000)
-    }, [currentProblem])
+    }, [currentProblem, elapsedSeconds, isMlContest])
 
     const handleFinish = () => {
+        const participantName = user?.username || 'coderunner'
+        if (isMlContest) {
+            const mlRows = Object.values(submissions).filter(sub => typeof sub.accuracy === 'number')
+            const bestSubmission = mlRows.reduce((best, sub) => {
+                if (!best) return sub
+                if ((sub.accuracy || 0) !== (best.accuracy || 0)) {
+                    return (sub.accuracy || 0) > (best.accuracy || 0) ? sub : best
+                }
+                return (sub.timeSeconds ?? Infinity) < (best.timeSeconds ?? Infinity) ? sub : best
+            }, null)
+            recordContestResult(contestId, {
+                name: participantName,
+                country: '🌍',
+                accuracy: bestSubmission?.accuracy || 0,
+                submissions: mlRows.reduce((count, sub) => count + (sub.submissions || 0), 0),
+                time: formatElapsed(bestSubmission?.timeSeconds ?? elapsedSeconds),
+                timeSeconds: bestSubmission?.timeSeconds ?? elapsedSeconds,
+            })
+        } else {
+            const problemMap = Object.fromEntries(problems.map(problem => [problem.id, problem]))
+            const wrongCount = Object.values(submissions).filter(sub => ['wrong', 'tle', 'error'].includes(sub.status)).length
+            const score = Object.entries(submissions).reduce((total, [problemId, sub]) => {
+                if (sub.status !== 'accepted') return total
+                const difficulty = problemMap[problemId]?.difficulty
+                const points = difficulty === 'Hard' ? 1600 : difficulty === 'Medium' ? 1200 : 800
+                return total + points
+            }, 0) - wrongCount * 50
+            recordContestResult(contestId, {
+                name: participantName,
+                country: '🌍',
+                score: Math.max(0, score),
+                solved: solvedCount,
+                time: formatElapsed(elapsedSeconds),
+                timeSeconds: elapsedSeconds,
+            })
+        }
         endAttempt()
         setFinished(true)
         setTimeout(() => navigate(`/contests/${contestId}`), 3000)
@@ -134,15 +240,20 @@ export default function ContestArena() {
     // Timer urgency effect
     const timerColor = remaining === 0 ? '#ef4444' : isUrgent ? '#f59e0b' : '#34d399'
 
-    // Solved count
+    // Solved count / ML metric
     const solvedCount = Object.values(submissions).filter(s => s.status === 'accepted').length
+    const bestAccuracy = Object.values(submissions).reduce((best, submission) => Math.max(best, submission.accuracy || 0), 0)
 
     if (finished) {
         return (
             <div style={{ minHeight: '100vh', background: '#0b0f19', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', fontFamily: 'Inter,sans-serif', gap: '20px' }}>
                 <div style={{ fontSize: '64px', animation: 'bounce 1s ease' }}>🏆</div>
                 <h1 style={{ fontSize: '28px', fontWeight: 800, color: '#f1f5f9' }}>Contest Submitted!</h1>
-                <p style={{ color: '#9ca3af', fontSize: '16px' }}>You solved <strong style={{ color: '#34d399' }}>{solvedCount}</strong> out of <strong style={{ color: '#e5e7eb' }}>{problems.length}</strong> problems</p>
+                <p style={{ color: '#9ca3af', fontSize: '16px' }}>
+                    {isMlContest
+                        ? <>Your best accuracy was <strong style={{ color: '#34d399' }}>{formatAccuracy(bestAccuracy)}</strong></>
+                        : <>You solved <strong style={{ color: '#34d399' }}>{solvedCount}</strong> out of <strong style={{ color: '#e5e7eb' }}>{problems.length}</strong> problems</>}
+                </p>
                 <p style={{ color: '#6b7280', fontSize: '14px' }}>Redirecting to results…</p>
                 <style>{`@keyframes bounce { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-20px)} }`}</style>
             </div>
@@ -187,7 +298,7 @@ export default function ContestArena() {
                         </span>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '5px 12px', borderRadius: '8px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)', fontSize: '13px', color: '#9ca3af' }}>
-                        <Target size={13} /> {solvedCount}/{problems.length}
+                        <Target size={13} /> {isMlContest ? formatAccuracy(bestAccuracy) : `${solvedCount}/${problems.length}`}
                     </div>
                     <button onClick={() => setShowFinish(true)} style={{ padding: '6px 16px', borderRadius: '9px', background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.3)', color: '#f87171', fontWeight: 700, fontSize: '13px', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: '6px' }}>
                         <Trophy size={13} /> Finish
@@ -268,13 +379,13 @@ export default function ContestArena() {
                             {/* Language selector */}
                             <div style={{ position: 'relative' }}>
                                 <button onClick={() => setLangOpen(o => !o)} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '4px 12px', borderRadius: '8px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', color: '#d1d5db', fontSize: '13px', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
-                                    {lang.charAt(0).toUpperCase() + lang.slice(1)} <ChevronDown size={12} style={{ transition: 'transform 0.2s', transform: langOpen ? 'rotate(180deg)' : 'none' }} />
+                                    {currentLang?.label || 'Language'} <ChevronDown size={12} style={{ transition: 'transform 0.2s', transform: langOpen ? 'rotate(180deg)' : 'none' }} />
                                 </button>
                                 {langOpen && (
                                     <div style={{ position: 'absolute', top: '36px', left: 0, zIndex: 200, width: '140px', borderRadius: '12px', background: '#1a1f2e', border: '1px solid rgba(255,255,255,0.1)', boxShadow: '0 16px 32px rgba(0,0,0,0.5)', overflow: 'hidden' }}>
-                                        {LANGS.map(l => (
-                                            <button key={l} onClick={() => { setLang(l); setLangOpen(false) }} style={{ width: '100%', padding: '10px 16px', background: l === lang ? 'rgba(52,211,153,0.1)' : 'transparent', border: 'none', color: l === lang ? '#34d399' : '#d1d5db', fontSize: '13.5px', fontWeight: l === lang ? 700 : 400, cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                                {l.charAt(0).toUpperCase() + l.slice(1)} {l === lang && <CheckCircle size={13} />}
+                                        {availableLanguages.map(language => (
+                                            <button key={language.key} onClick={() => { setLang(language.key); setLangOpen(false) }} style={{ width: '100%', padding: '10px 16px', background: language.key === lang ? 'rgba(52,211,153,0.1)' : 'transparent', border: 'none', color: language.key === lang ? '#34d399' : '#d1d5db', fontSize: '13.5px', fontWeight: language.key === lang ? 700 : 400, cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                                {language.label} {language.key === lang && <CheckCircle size={13} />}
                                             </button>
                                         ))}
                                     </div>
@@ -282,7 +393,7 @@ export default function ContestArena() {
                             </div>
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <button onClick={() => { if (detail) setCode(detail.starterCode?.[lang] || '') }} style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '4px 11px', borderRadius: '7px', background: 'transparent', border: '1px solid rgba(255,255,255,0.08)', color: '#6b7280', fontSize: '12.5px', cursor: 'pointer', fontFamily: 'inherit' }}>
+                            <button onClick={() => { if (detail) setCode(getStarterCodeForLanguage(detail, lang)) }} style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '4px 11px', borderRadius: '7px', background: 'transparent', border: '1px solid rgba(255,255,255,0.08)', color: '#6b7280', fontSize: '12.5px', cursor: 'pointer', fontFamily: 'inherit' }}>
                                 <RotateCcw size={11} /> Reset
                             </button>
                             <button onClick={() => setFullscreen(f => !f)} style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '4px 11px', borderRadius: '7px', background: 'transparent', border: '1px solid rgba(255,255,255,0.08)', color: '#6b7280', fontSize: '12.5px', cursor: 'pointer', fontFamily: 'inherit' }}>
@@ -308,6 +419,12 @@ export default function ContestArena() {
                     {runOutput && (
                         <div style={{ background: '#111827', borderTop: '1px solid rgba(255,255,255,0.07)', padding: '14px 20px', maxHeight: '180px', overflowY: 'auto', flexShrink: 0 }}>
                             <p style={{ fontSize: '13px', fontWeight: 700, color: runOutput.type === 'success' ? '#34d399' : '#f87171', marginBottom: '10px' }}>{runOutput.message}</p>
+                            {runOutput.metrics?.map((metric, i) => (
+                                <div key={metric.label} style={{ background: 'rgba(52,211,153,0.05)', border: '1px solid rgba(52,211,153,0.15)', borderRadius: '8px', padding: '10px 14px', marginBottom: i < runOutput.metrics.length - 1 ? '6px' : 0, fontSize: '13px', fontFamily: 'monospace', color: '#9ca3af' }}>
+                                    <span style={{ color: '#34d399', fontWeight: 700, marginRight: '8px' }}>{metric.label}:</span>
+                                    <span>{metric.value}</span>
+                                </div>
+                            ))}
                             {runOutput.cases?.map((c, i) => (
                                 <div key={i} style={{ background: c.passed ? 'rgba(52,211,153,0.05)' : 'rgba(248,113,113,0.05)', border: `1px solid ${c.passed ? 'rgba(52,211,153,0.15)' : 'rgba(248,113,113,0.15)'}`, borderRadius: '8px', padding: '10px 14px', marginBottom: '6px', fontSize: '13px', fontFamily: 'monospace', color: '#9ca3af' }}>
                                     <span style={{ color: c.passed ? '#34d399' : '#f87171', fontWeight: 700, marginRight: '8px' }}>{c.passed ? '✓' : '✗'}</span>
@@ -320,14 +437,14 @@ export default function ContestArena() {
                     {/* Bottom action bar */}
                     <div style={{ height: '56px', background: '#111827', borderTop: '1px solid rgba(255,255,255,0.07)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 16px', flexShrink: 0 }}>
                         <div style={{ fontSize: '13px', color: '#6b7280' }}>
-                            {currentProblem && <span>Problem {String.fromCharCode(65 + problemIdx)} · {currentProblem.difficulty}</span>}
+                            {currentProblem && <span>Problem {String.fromCharCode(65 + problemIdx)} · {currentProblem.difficulty}{isMlContest ? ` · Best ${formatAccuracy(bestAccuracy)}` : ''}</span>}
                         </div>
                         <div style={{ display: 'flex', gap: '10px' }}>
                             <button onClick={handleRun} disabled={isRunning} style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '9px 20px', borderRadius: '10px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#d1d5db', fontWeight: 600, fontSize: '13.5px', cursor: isRunning ? 'default' : 'pointer', transition: 'all 0.2s', fontFamily: 'inherit', opacity: isRunning ? 0.6 : 1 }}>
-                                {isRunning ? <Loader size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <Play size={14} />} Run
+                                {isRunning ? <Loader size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <Play size={14} />} {isMlContest ? 'Run Validation' : 'Run'}
                             </button>
                             <button onClick={handleSubmit} disabled={isSubmitting} style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '9px 20px', borderRadius: '10px', background: isSubmitting ? 'rgba(52,211,153,0.1)' : 'linear-gradient(135deg,#34d399,#059669)', border: isSubmitting ? '1px solid rgba(52,211,153,0.3)' : 'none', color: isSubmitting ? '#34d399' : '#0b1a14', fontWeight: 700, fontSize: '13.5px', cursor: isSubmitting ? 'default' : 'pointer', transition: 'all 0.2s', fontFamily: 'inherit', boxShadow: !isSubmitting ? '0 4px 14px rgba(52,211,153,0.25)' : 'none' }}>
-                                {isSubmitting ? <Loader size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <Send size={14} />} Submit
+                                {isSubmitting ? <Loader size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <Send size={14} />} {isMlContest ? 'Submit Model' : 'Submit'}
                             </button>
                         </div>
                     </div>
@@ -341,7 +458,9 @@ export default function ContestArena() {
                         <div style={{ fontSize: '48px', marginBottom: '16px' }}>🏁</div>
                         <h2 style={{ fontSize: '22px', fontWeight: 800, color: '#f1f5f9', marginBottom: '8px' }}>Finish Contest?</h2>
                         <p style={{ color: '#9ca3af', fontSize: '14px', lineHeight: 1.6, marginBottom: '8px' }}>
-                            You have solved <strong style={{ color: '#34d399' }}>{solvedCount}</strong> of <strong style={{ color: '#e5e7eb' }}>{problems.length}</strong> problems.
+                            {isMlContest
+                                ? <>Your current leaderboard metric is <strong style={{ color: '#34d399' }}>{formatAccuracy(bestAccuracy)}</strong>.</>
+                                : <>You have solved <strong style={{ color: '#34d399' }}>{solvedCount}</strong> of <strong style={{ color: '#e5e7eb' }}>{problems.length}</strong> problems.</>}
                         </p>
                         <p style={{ color: '#6b7280', fontSize: '13px', marginBottom: '24px' }}>Time remaining: {String(h).padStart(2,'0')}:{String(m).padStart(2,'0')}:{String(s).padStart(2,'0')}</p>
                         <div style={{ display: 'flex', gap: '12px' }}>

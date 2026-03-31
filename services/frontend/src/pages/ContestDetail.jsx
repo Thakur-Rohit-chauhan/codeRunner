@@ -7,7 +7,6 @@ import {
 } from 'lucide-react'
 import Navbar from '../components/Navbar/Navbar'
 import useContestStore from '../store/contestStore'
-import { mockProblems } from '../utils/mockData'
 
 function useCountdown(isoDate) {
     const [t, setT] = useState({})
@@ -29,19 +28,14 @@ const typeMeta = {
     custom:   { label: 'Custom',   color: '#c084fc', bg: 'rgba(192,132,252,0.1)', border: 'rgba(192,132,252,0.2)' },
 }
 
-// Fake leaderboard
-const fakeLeaderboard = [
-    { rank: 1, name: 'alex_coder',   score: 4200, solved: 4, time: '1h 12m', country: '🇺🇸' },
-    { rank: 2, name: 'devMaster99',  score: 3900, solved: 4, time: '1h 28m', country: '🇮🇳' },
-    { rank: 3, name: 'rushikesh_r',  score: 3500, solved: 3, time: '58m',    country: '🇮🇳' },
-    { rank: 4, name: 'codewizard22', score: 3200, solved: 3, time: '1h 05m', country: '🇩🇪' },
-    { rank: 5, name: 'algo_queen',   score: 2800, solved: 3, time: '1h 20m', country: '🇬🇧' },
-]
+function formatAccuracy(value) {
+    return `${((value || 0) * 100).toFixed(2)}%`
+}
 
 export default function ContestDetail() {
     const { contestId } = useParams()
     const navigate = useNavigate()
-    const { getContest, isRegistered, registerContest, unregisterContest, startAttempt, getProblemsForContest } = useContestStore()
+    const { getContest, getLeaderboard, isRegistered, registerContest, unregisterContest, startAttempt, getProblemsForContest } = useContestStore()
     const contest = getContest(contestId)
     const reg = isRegistered(contestId)
     const cd = useCountdown(contest?.startTime)
@@ -61,7 +55,9 @@ export default function ContestDetail() {
     )
 
     const problems = getProblemsForContest(contest)
+    const leaderboard = getLeaderboard(contestId)
     const meta = typeMeta[contest.type] || typeMeta.weekly
+    const isMlContest = contest.ranking === 'accuracy' || contest.domain === 'ML'
 
     const handleAttempt = () => {
         startAttempt(contestId)
@@ -84,6 +80,9 @@ export default function ContestDetail() {
                         <div style={{ flex: 1, minWidth: '280px' }}>
                             <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap' }}>
                                 <span style={{ fontSize: '12px', fontWeight: 700, color: meta.color, background: meta.bg, border: `1px solid ${meta.border}`, padding: '4px 12px', borderRadius: '20px', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{meta.label}</span>
+                                <span style={{ fontSize: '12px', fontWeight: 700, color: contest.domain === 'ML' ? '#38bdf8' : contest.domain === 'CTF' ? '#f59e0b' : '#34d399', background: contest.domain === 'ML' ? 'rgba(56,189,248,0.1)' : contest.domain === 'CTF' ? 'rgba(245,158,11,0.1)' : 'rgba(52,211,153,0.1)', border: `1px solid ${contest.domain === 'ML' ? 'rgba(56,189,248,0.25)' : contest.domain === 'CTF' ? 'rgba(245,158,11,0.25)' : 'rgba(52,211,153,0.25)'}`, padding: '4px 12px', borderRadius: '20px', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                                    {contest.domain || 'DSA'}
+                                </span>
                                 {contest.featured && <span style={{ fontSize: '12px', fontWeight: 700, color: '#f59e0b', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.2)', padding: '4px 12px', borderRadius: '20px', display: 'flex', alignItems: 'center', gap: '4px' }}><Flame size={11} /> Featured</span>}
                                 <span style={{ fontSize: '12px', fontWeight: 600, color: contest.status === 'past' ? '#6b7280' : isLive ? '#ef4444' : '#34d399', background: contest.status === 'past' ? 'rgba(107,114,128,0.1)' : isLive ? 'rgba(239,68,68,0.1)' : 'rgba(52,211,153,0.1)', border: `1px solid ${contest.status === 'past' ? 'rgba(107,114,128,0.2)' : isLive ? 'rgba(239,68,68,0.3)' : 'rgba(52,211,153,0.2)'}`, padding: '4px 12px', borderRadius: '20px', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
                                     {contest.status === 'past' ? 'Ended' : isLive ? '🔴 Live Now' : 'Upcoming'}
@@ -139,6 +138,7 @@ export default function ContestDetail() {
                                     <Trophy size={20} style={{ marginBottom: '8px', color: '#fbbf24' }} />
                                     <p>Contest ended</p>
                                     {contest.results?.userRank && <p style={{ fontSize: '20px', fontWeight: 700, color: '#34d399', marginTop: '4px' }}>Your rank: #{contest.results.userRank}</p>}
+                                    {isMlContest && contest.results?.userAccuracy && <p style={{ fontSize: '14px', color: '#9ca3af', marginTop: '6px' }}>Best accuracy: {formatAccuracy(contest.results.userAccuracy)}</p>}
                                 </div>
                             ) : isLive ? (
                                 reg && <button onClick={handleAttempt} style={{ width: '100%', padding: '14px', borderRadius: '13px', background: 'linear-gradient(135deg,#ef4444,#b91c1c)', border: 'none', color: '#fff', fontWeight: 800, fontSize: '15px', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', boxShadow: '0 4px 20px rgba(239,68,68,0.35)', letterSpacing: '0.03em' }}>
@@ -176,8 +176,8 @@ export default function ContestDetail() {
                                     <li>Duration: <strong style={{ color: '#e5e7eb' }}>{contest.duration} minutes</strong></li>
                                     <li>Problems: <strong style={{ color: '#e5e7eb' }}>{problems.length}</strong></li>
                                     <li>Type: <strong style={{ color: '#e5e7eb', textTransform: 'capitalize' }}>{contest.type}</strong></li>
-                                    <li>Scoring: Points awarded based on correctness and time</li>
-                                    <li>Penalty: 10 minutes per wrong submission</li>
+                                    <li>Scoring: <strong style={{ color: '#e5e7eb' }}>{isMlContest ? 'Highest achieved accuracy decides rank' : 'Points awarded based on correctness and time'}</strong></li>
+                                    <li>{isMlContest ? 'Tie-breaker: Earlier best-scoring submission wins' : 'Penalty: 10 minutes per wrong submission'}</li>
                                 </ul>
                             </div>
 
@@ -231,7 +231,7 @@ export default function ContestDetail() {
                                     key={p.id}
                                     onMouseEnter={() => setHoveredProblem(p.id)}
                                     onMouseLeave={() => setHoveredProblem(null)}
-                                    onClick={() => navigate(`/problems/${p.id}`)}
+                                    onClick={() => navigate(`/problems/${p.id}${contest.domain ? `?domain=${encodeURIComponent(contest.domain)}` : ''}`)}
                                     style={{ display: 'flex', alignItems: 'center', gap: '16px', padding: '18px 24px', borderRadius: '14px', background: hoveredProblem === p.id ? 'rgba(52,211,153,0.05)' : 'rgba(255,255,255,0.02)', border: `1px solid ${hoveredProblem === p.id ? 'rgba(52,211,153,0.2)' : 'rgba(255,255,255,0.06)'}`, cursor: 'pointer', transition: 'all 0.2s', transform: hoveredProblem === p.id ? 'translateX(3px)' : 'none' }}
                                 >
                                     <span style={{ width: '32px', height: '32px', borderRadius: '10px', background: 'rgba(52,211,153,0.1)', border: '1px solid rgba(52,211,153,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', fontWeight: 800, color: '#34d399', flexShrink: 0 }}>{String.fromCharCode(65 + i)}</span>
@@ -269,16 +269,16 @@ export default function ContestDetail() {
                 {activeTab === 'leaderboard' && (
                     <div style={{ paddingBottom: '60px' }}>
                         <div style={{ borderRadius: '16px', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.07)' }}>
-                            <div style={{ display: 'grid', gridTemplateColumns: '60px 1fr 100px 80px 120px 40px', gap: '0', padding: '12px 24px', background: 'rgba(255,255,255,0.03)', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-                                {['Rank', 'Participant', 'Score', 'Solved', 'Time', ''].map(h => <span key={h} style={{ fontSize: '11px', fontWeight: 700, color: '#6b7280', letterSpacing: '0.08em', textTransform: 'uppercase' }}>{h}</span>)}
+                            <div style={{ display: 'grid', gridTemplateColumns: isMlContest ? '60px 1fr 140px 110px 120px 40px' : '60px 1fr 100px 80px 120px 40px', gap: '0', padding: '12px 24px', background: 'rgba(255,255,255,0.03)', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+                                {(isMlContest ? ['Rank', 'Participant', 'Best Accuracy', 'Submissions', 'Best Time', ''] : ['Rank', 'Participant', 'Score', 'Solved', 'Time', '']).map(h => <span key={h} style={{ fontSize: '11px', fontWeight: 700, color: '#6b7280', letterSpacing: '0.08em', textTransform: 'uppercase' }}>{h}</span>)}
                             </div>
-                            {fakeLeaderboard.map((row, i) => (
+                            {leaderboard.map((row, i) => (
                                 <div
                                     key={row.rank}
                                     onMouseEnter={() => setHoveredRow(row.rank)}
                                     onMouseLeave={() => setHoveredRow(null)}
                                     onClick={() => navigate(`/profile/${row.name}`)}
-                                    style={{ display: 'grid', gridTemplateColumns: '60px 1fr 100px 80px 120px 40px', alignItems: 'center', padding: '16px 24px', borderBottom: i < fakeLeaderboard.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none', background: hoveredRow === row.rank ? 'rgba(52,211,153,0.04)' : i === 0 ? 'rgba(245,158,11,0.04)' : 'transparent', transition: 'background 0.2s', cursor: 'pointer' }}
+                                    style={{ display: 'grid', gridTemplateColumns: isMlContest ? '60px 1fr 140px 110px 120px 40px' : '60px 1fr 100px 80px 120px 40px', alignItems: 'center', padding: '16px 24px', borderBottom: i < leaderboard.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none', background: hoveredRow === row.rank ? 'rgba(52,211,153,0.04)' : i === 0 ? 'rgba(245,158,11,0.04)' : 'transparent', transition: 'background 0.2s', cursor: 'pointer' }}
                                 >
                                     <span style={{ fontSize: '16px', fontWeight: 800, color: row.rank <= 3 ? ['#f59e0b', '#9ca3af', '#cd7c2f'][row.rank - 1] : '#6b7280' }}>
                                         {row.rank <= 3 ? ['🥇', '🥈', '🥉'][row.rank - 1] : `#${row.rank}`}
@@ -290,12 +290,17 @@ export default function ContestDetail() {
                                             <p style={{ fontSize: '12px', color: '#6b7280' }}>{row.country}</p>
                                         </div>
                                     </div>
-                                    <span style={{ fontSize: '15px', fontWeight: 700, color: '#34d399' }}>{row.score.toLocaleString()}</span>
-                                    <span style={{ fontSize: '14px', color: '#d1d5db', fontWeight: 500 }}>{row.solved}/{problems.length}</span>
+                                    <span style={{ fontSize: '15px', fontWeight: 700, color: '#34d399' }}>{isMlContest ? formatAccuracy(row.accuracy) : row.score.toLocaleString()}</span>
+                                    <span style={{ fontSize: '14px', color: '#d1d5db', fontWeight: 500 }}>{isMlContest ? row.submissions : `${row.solved}/${problems.length}`}</span>
                                     <span style={{ fontSize: '13.5px', color: '#9ca3af' }}>{row.time}</span>
                                     <ChevronRight size={14} style={{ color: hoveredRow === row.rank ? '#34d399' : '#4b5563', transition: 'color 0.2s' }} />
                                 </div>
                             ))}
+                            {leaderboard.length === 0 && (
+                                <div style={{ padding: '28px 24px', color: '#6b7280', textAlign: 'center', background: 'rgba(255,255,255,0.02)' }}>
+                                    No leaderboard data yet.
+                                </div>
+                            )}
                         </div>
 
                     </div>

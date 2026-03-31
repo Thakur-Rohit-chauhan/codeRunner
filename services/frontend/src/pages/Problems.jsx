@@ -61,7 +61,7 @@ export default function Problems() {
         return () => document.removeEventListener('mousedown', handler)
     }, [])
 
-    // Handle sort selection — clicking the same option toggles direction
+    // Handle sort selection - clicking the same option toggles direction
     const handleSortSelect = (key) => {
         // Tags is a visibility toggle, not a sort
         if (key === 'tags') {
@@ -140,7 +140,7 @@ export default function Problems() {
     const paginated = filtered.slice((page - 1) * perPage, page * perPage)
 
     return (
-        <div className="min-h-screen" style={{ 
+        <div className="min-h-screen" style={{
             background: 'linear-gradient(135deg, #0b0f19 0%, #161b22 100%)',
             color: '#e5e7eb',
             fontFamily: '"Inter", "Roboto", sans-serif'
@@ -291,7 +291,7 @@ export default function Problems() {
 
                     {/* Solved Counter */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <div style={{ 
+                        <div style={{
                             display: 'flex', alignItems: 'center', gap: '10px',
                             background: 'rgba(255,255,255,0.02)', padding: '6px 14px',
                             borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)'
@@ -313,8 +313,8 @@ export default function Problems() {
                 </div>
 
                 {/* Problem Rows Container */}
-                <div style={{ 
-                    borderRadius: '16px', 
+                <div style={{
+                    borderRadius: '16px',
                     overflow: 'hidden',
                     background: 'rgba(20, 24, 32, 0.4)',
                     border: '1px solid rgba(255,255,255,0.05)',
@@ -323,7 +323,7 @@ export default function Problems() {
                     {paginated.map((p, i) => (
                         <Link
                             key={p.id}
-                            to={`/problems/${p.id}`}
+                            to={urlDomain ? `/problems/${p.id}?domain=${encodeURIComponent(urlDomain)}` : `/problems/${p.id}`}
                             style={{
                                 display: 'flex',
                                 alignItems: 'center',

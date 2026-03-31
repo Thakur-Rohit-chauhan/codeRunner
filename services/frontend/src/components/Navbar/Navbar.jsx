@@ -2,7 +2,6 @@ import { useState, useRef, useEffect } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { Shield, User, LogOut, Settings, Palette, ChevronDown, BookOpen, BarChart3, Layout, X, Download, Check, Trophy } from 'lucide-react'
 import useAuthStore from '../../store/authStore'
-import { mockProblems } from '../../utils/mockData'
 
 export default function Navbar() {
     const { user, isAuthenticated, logout } = useAuthStore()
@@ -68,110 +67,226 @@ export default function Navbar() {
         { to: '/problems?domain=CTF', label: 'Cyber Security' },
     ]
 
+    const currentRoute = `${location.pathname}${location.search}`
+    const isContestRoute = location.pathname === '/contests' || location.pathname.startsWith('/contests/')
+
     return (
-        <nav className="sticky top-0 z-50 flex items-center justify-between px-8 md:px-12 lg:px-16 py-4 bg-[#1a1a1a] border-b border-[#2a2a2a]">
-            {/* Logo — Shield + CodeRunner */}
-            <Link to="/" className="flex items-center gap-2.5 group">
-                <div className="flex items-center justify-center w-10 h-10 rounded-xl border border-green-500/40 bg-green-500/5 group-hover:bg-green-500/10 transition-colors">
-                    <Shield className="w-5 h-5 text-green-400" />
-                </div>
-                <span className="text-lg font-bold text-white tracking-wide">
-                    Code<span className="text-green-400">Runner</span>
-                </span>
-            </Link>
-
-            {/* Nav Links — Centered, uppercase */}
-            <div className="hidden md:flex items-center gap-6">
-                {navLinks.map(({ to, label }) => {
-                    const isActive = (location.pathname + location.search) === to;
-                    return (
-                        <Link
-                            key={label}
-                            to={to}
-                            className={`py-2 text-[13px] font-medium tracking-[0.15em] transition-colors ${isActive
-                                ? 'text-white'
-                                : 'text-[#a1a1aa] hover:text-white'
-                                }`}
-                        >
-                            {label}
-                        </Link>
-                    );
-                })}
-            </div>
-
-            {/* Contests CTA Button */}
-            {isAuthenticated && (
+        <nav
+            className="sticky top-0 z-50"
+            style={{
+                padding: '14px 18px 10px',
+                background: 'linear-gradient(180deg, rgba(11,15,25,0.92) 0%, rgba(11,15,25,0.78) 100%)',
+                borderBottom: '1px solid rgba(255,255,255,0.04)',
+                backdropFilter: 'blur(18px)',
+                WebkitBackdropFilter: 'blur(18px)',
+            }}
+        >
+            <div
+                style={{
+                    maxWidth: '1380px',
+                    margin: '0 auto',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '18px',
+                    padding: '10px 14px',
+                    borderRadius: '24px',
+                    background: 'linear-gradient(180deg, rgba(23,27,35,0.94) 0%, rgba(18,22,30,0.9) 100%)',
+                    border: '1px solid rgba(255,255,255,0.07)',
+                    boxShadow: '0 18px 50px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.04)',
+                }}
+            >
+                {/* Logo */}
                 <Link
-                    to="/contests"
-                    className="hidden md:flex items-center gap-2"
+                    to="/"
+                    className="group"
                     style={{
-                        padding: '8px 18px',
-                        borderRadius: '12px',
-                        background: location.pathname === '/contests'
-                            ? 'linear-gradient(135deg, #34d399 0%, #059669 100%)'
-                            : 'rgba(52,211,153,0.08)',
-                        border: '1px solid rgba(52,211,153,0.3)',
-                        color: location.pathname === '/contests' ? '#0b1a14' : '#34d399',
-                        fontSize: '13px',
-                        fontWeight: 700,
-                        letterSpacing: '0.05em',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '12px',
+                        flexShrink: 0,
                         textDecoration: 'none',
-                        transition: 'all 0.25s',
-                        boxShadow: location.pathname === '/contests' ? '0 4px 16px rgba(52,211,153,0.3)' : 'none',
-                    }}
-                    onMouseEnter={e => {
-                        if (location.pathname !== '/contests') {
-                            e.currentTarget.style.background = 'rgba(52,211,153,0.15)'
-                            e.currentTarget.style.boxShadow = '0 4px 16px rgba(52,211,153,0.15)'
-                        }
-                    }}
-                    onMouseLeave={e => {
-                        if (location.pathname !== '/contests') {
-                            e.currentTarget.style.background = 'rgba(52,211,153,0.08)'
-                            e.currentTarget.style.boxShadow = 'none'
-                        }
                     }}
                 >
-                    <Trophy size={14} />
-                    Contests
+                    <div
+                        style={{
+                            width: '46px',
+                            height: '46px',
+                            borderRadius: '16px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            background: 'linear-gradient(180deg, rgba(52,211,153,0.12) 0%, rgba(52,211,153,0.05) 100%)',
+                            border: '1px solid rgba(52,211,153,0.24)',
+                            boxShadow: '0 0 0 1px rgba(52,211,153,0.08), inset 0 1px 0 rgba(255,255,255,0.05)',
+                            transition: 'transform 0.2s ease, box-shadow 0.2s ease',
+                        }}
+                    >
+                        <Shield className="w-5 h-5 text-green-400" />
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                        <span style={{ fontSize: '15px', fontWeight: 800, color: '#f8fafc', letterSpacing: '-0.02em' }}>
+                            Code<span style={{ color: '#4ade80' }}>Runner</span>
+                        </span>
+                        <span style={{ fontSize: '10px', fontWeight: 700, color: '#6b7280', letterSpacing: '0.18em', textTransform: 'uppercase' }}>
+                            Practice Workspace
+                        </span>
+                    </div>
                 </Link>
-            )}
 
-            {/* Auth Buttons */}
-            <div className="flex items-center gap-3">
-                {isAuthenticated ? (
-                    <div className="relative" ref={dropdownRef}>
-                        <button
-                            onClick={() => setDropdown(!dropdown)}
-                            className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-white/5 transition-colors border border-transparent hover:border-white/10"
-                        >
-                            {user?.avatar ? (
-                                <img src={user.avatar} alt="Avatar" className="w-8 h-8 rounded-full object-cover border border-emerald-500/50 shadow-[0_0_10px_rgba(74,222,128,0.2)]" />
-                            ) : (
-                                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-green-400 to-emerald-600 flex items-center justify-center text-sm font-bold text-slate-900 shadow-[0_0_10px_rgba(74,222,128,0.3)]">
-                                    {user?.displayName?.[0] || 'U'}
-                                </div>
-                            )}
-                            <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${dropdown ? 'rotate-180' : ''}`} />
-                        </button>
-
-                        {dropdown && (
-                            <div
+                {/* Nav links */}
+                <div
+                    className="hidden md:flex"
+                    style={{
+                        alignItems: 'center',
+                        gap: '8px',
+                        padding: '6px',
+                        borderRadius: '18px',
+                        background: 'rgba(255,255,255,0.025)',
+                        border: '1px solid rgba(255,255,255,0.05)',
+                        boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.03)',
+                    }}
+                >
+                    {navLinks.map(({ to, label }) => {
+                        const isActive = currentRoute === to
+                        return (
+                            <Link
+                                key={label}
+                                to={to}
                                 style={{
-                                    position: 'absolute',
-                                    right: 0,
-                                    top: 'calc(100% + 8px)',
-                                    width: '320px',
-                                    borderRadius: '20px',
-                                    border: '1px solid rgba(255,255,255,0.1)',
-                                    background: 'linear-gradient(to bottom, rgba(22,28,36,0.97) 0%, rgba(13,17,23,0.99) 100%)',
-                                    backdropFilter: 'blur(32px)',
-                                    WebkitBackdropFilter: 'blur(32px)',
-                                    boxShadow: '0 24px 48px -12px rgba(0,0,0,0.8), 0 0 24px rgba(52,211,153,0.06)',
-                                    padding: '10px 8px 8px',
-                                    zIndex: 9999,
+                                    position: 'relative',
+                                    padding: '11px 18px',
+                                    borderRadius: '14px',
+                                    fontSize: '13px',
+                                    fontWeight: isActive ? 700 : 600,
+                                    letterSpacing: '0.12em',
+                                    whiteSpace: 'nowrap',
+                                    textTransform: 'uppercase',
+                                    textDecoration: 'none',
+                                    color: isActive ? '#eafff4' : '#a1a1aa',
+                                    background: isActive ? 'linear-gradient(135deg, rgba(52,211,153,0.16) 0%, rgba(16,185,129,0.08) 100%)' : 'transparent',
+                                    border: `1px solid ${isActive ? 'rgba(52,211,153,0.18)' : 'transparent'}`,
+                                    boxShadow: isActive ? '0 10px 24px rgba(16,185,129,0.14)' : 'none',
+                                    transition: 'all 0.2s ease',
+                                }}
+                                onMouseEnter={(e) => {
+                                    if (!isActive) {
+                                        e.currentTarget.style.background = 'rgba(255,255,255,0.05)'
+                                        e.currentTarget.style.color = '#f3f4f6'
+                                    }
+                                }}
+                                onMouseLeave={(e) => {
+                                    if (!isActive) {
+                                        e.currentTarget.style.background = 'transparent'
+                                        e.currentTarget.style.color = '#a1a1aa'
+                                    }
                                 }}
                             >
+                                {label}
+                            </Link>
+                        )
+                    })}
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexShrink: 0 }}>
+                    {/* Contests CTA */}
+                    {isAuthenticated && (
+                        <Link
+                            to="/contests"
+                            className="hidden md:flex items-center gap-2"
+                            style={{
+                                padding: '11px 18px',
+                                borderRadius: '16px',
+                                alignItems: 'center',
+                                background: isContestRoute
+                                    ? 'linear-gradient(135deg, rgba(52,211,153,0.22) 0%, rgba(5,150,105,0.18) 100%)'
+                                    : 'linear-gradient(135deg, rgba(52,211,153,0.08) 0%, rgba(16,185,129,0.04) 100%)',
+                                border: '1px solid rgba(52,211,153,0.25)',
+                                color: isContestRoute ? '#d1fae5' : '#6ee7b7',
+                                fontSize: '13px',
+                                fontWeight: 700,
+                                letterSpacing: '0.06em',
+                                textDecoration: 'none',
+                                transition: 'all 0.25s',
+                                boxShadow: isContestRoute ? '0 12px 28px rgba(16,185,129,0.18)' : 'none',
+                            }}
+                            onMouseEnter={e => {
+                                if (!isContestRoute) {
+                                    e.currentTarget.style.background = 'linear-gradient(135deg, rgba(52,211,153,0.14) 0%, rgba(16,185,129,0.08) 100%)'
+                                    e.currentTarget.style.boxShadow = '0 12px 28px rgba(16,185,129,0.12)'
+                                }
+                            }}
+                            onMouseLeave={e => {
+                                if (!isContestRoute) {
+                                    e.currentTarget.style.background = 'linear-gradient(135deg, rgba(52,211,153,0.08) 0%, rgba(16,185,129,0.04) 100%)'
+                                    e.currentTarget.style.boxShadow = 'none'
+                                }
+                            }}
+                        >
+                            <Trophy size={14} />
+                            Contests
+                        </Link>
+                    )}
+
+                    {/* Auth Buttons */}
+                    <div className="flex items-center gap-3">
+                        {isAuthenticated ? (
+                            <div className="relative" ref={dropdownRef}>
+                                <button
+                                    onClick={() => setDropdown(!dropdown)}
+                                    style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '10px',
+                                        padding: '6px 8px 6px 6px',
+                                        borderRadius: '16px',
+                                        background: dropdown ? 'rgba(255,255,255,0.07)' : 'rgba(255,255,255,0.03)',
+                                        border: `1px solid ${dropdown ? 'rgba(52,211,153,0.16)' : 'rgba(255,255,255,0.05)'}`,
+                                        cursor: 'pointer',
+                                        transition: 'all 0.2s ease',
+                                    }}
+                                    onMouseEnter={e => {
+                                        if (!dropdown) e.currentTarget.style.background = 'rgba(255,255,255,0.05)'
+                                    }}
+                                    onMouseLeave={e => {
+                                        if (!dropdown) e.currentTarget.style.background = 'rgba(255,255,255,0.03)'
+                                    }}
+                                >
+                                    {user?.avatar ? (
+                                        <img src={user.avatar} alt="Avatar" className="w-9 h-9 rounded-full object-cover border border-emerald-500/50 shadow-[0_0_12px_rgba(74,222,128,0.2)]" />
+                                    ) : (
+                                        <div className="w-9 h-9 rounded-full bg-gradient-to-br from-green-400 to-emerald-600 flex items-center justify-center text-sm font-bold text-slate-900 shadow-[0_0_14px_rgba(74,222,128,0.3)]">
+                                            {user?.displayName?.[0] || 'U'}
+                                        </div>
+                                    )}
+                                    <div className="hidden sm:flex" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '1px', minWidth: 0 }}>
+                                        <span style={{ fontSize: '12px', fontWeight: 700, color: '#e5e7eb', maxWidth: '92px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                            {user?.displayName || 'User'}
+                                        </span>
+                                        <span style={{ fontSize: '10px', fontWeight: 700, color: '#6b7280', letterSpacing: '0.12em', textTransform: 'uppercase' }}>
+                                            Profile
+                                        </span>
+                                    </div>
+                                    <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${dropdown ? 'rotate-180' : ''}`} />
+                                </button>
+
+                                {dropdown && (
+                                    <div
+                                        style={{
+                                            position: 'absolute',
+                                            right: 0,
+                                            top: 'calc(100% + 10px)',
+                                            width: '320px',
+                                            borderRadius: '20px',
+                                            border: '1px solid rgba(255,255,255,0.1)',
+                                            background: 'linear-gradient(to bottom, rgba(22,28,36,0.97) 0%, rgba(13,17,23,0.99) 100%)',
+                                            backdropFilter: 'blur(32px)',
+                                            WebkitBackdropFilter: 'blur(32px)',
+                                            boxShadow: '0 24px 48px -12px rgba(0,0,0,0.8), 0 0 24px rgba(52,211,153,0.06)',
+                                            padding: '10px 8px 8px',
+                                            zIndex: 9999,
+                                        }}
+                                    >
                                 {/* User info card */}
                                 <div style={{
                                     display: 'flex',
@@ -334,24 +449,48 @@ export default function Navbar() {
                                     </button>
                                 </div>
                             </div>
+                                )}
+                            </div>
+                        ) : (
+                            <>
+                                <Link
+                                    to="/register"
+                                    style={{
+                                        padding: '10px 16px',
+                                        borderRadius: '14px',
+                                        fontSize: '12px',
+                                        fontWeight: 700,
+                                        letterSpacing: '0.12em',
+                                        textDecoration: 'none',
+                                        color: '#4ade80',
+                                        border: '1px solid rgba(74,222,128,0.35)',
+                                        background: 'rgba(52,211,153,0.06)',
+                                        transition: 'all 0.2s',
+                                    }}
+                                >
+                                    REGISTER
+                                </Link>
+                                <Link
+                                    to="/login"
+                                    style={{
+                                        padding: '10px 16px',
+                                        borderRadius: '14px',
+                                        fontSize: '12px',
+                                        fontWeight: 700,
+                                        letterSpacing: '0.12em',
+                                        textDecoration: 'none',
+                                        color: '#e5e7eb',
+                                        border: '1px solid rgba(255,255,255,0.12)',
+                                        background: 'rgba(255,255,255,0.03)',
+                                        transition: 'all 0.2s',
+                                    }}
+                                >
+                                    LOGIN
+                                </Link>
+                            </>
                         )}
                     </div>
-                ) : (
-                    <>
-                        <Link
-                            to="/register"
-                            className="px-6 py-2.5 rounded-md text-[13px] font-semibold tracking-[0.15em] text-green-400 border border-green-500/60 hover:bg-green-500/10 hover:border-green-400 transition-all"
-                        >
-                            REGISTER
-                        </Link>
-                        <Link
-                            to="/login"
-                            className="px-6 py-2.5 rounded-md text-[13px] font-semibold tracking-[0.15em] text-[#e5e7eb] border border-[#4b5563] hover:bg-white/5 hover:border-[#9ca3af] transition-all"
-                        >
-                            LOGIN
-                        </Link>
-                    </>
-                )}
+                </div>
             </div>
 
             {/* ═ Notes Editor Modal ═ */}
