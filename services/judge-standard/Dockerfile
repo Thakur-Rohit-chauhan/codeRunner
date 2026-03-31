@@ -39,11 +39,17 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -r requirements.txt
 
+# Install Docker CLI so worker can launch sandboxed runner containers
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends docker.io \
+    && rm -rf /var/lib/apt/lists/*
+
 # Copy compiled proto stubs from builder
 COPY --from=builder /build/grpc_gen /app/src/app/grpc_gen
 
 # Copy application source
 COPY src/ ./src/
+COPY seccomp/ ./seccomp/
 
 # Set PYTHONPATH
 ENV PYTHONPATH=/app/src

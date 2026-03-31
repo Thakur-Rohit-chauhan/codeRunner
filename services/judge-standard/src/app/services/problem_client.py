@@ -54,6 +54,7 @@ class ProblemClient:
                 {
                     "input": tc.input,
                     "expected_output": tc.expected_output,
+                    "time_limit": tc.time_limit,
                     "hidden": tc.hidden == 1,
                 }
                 for tc in response.test_cases

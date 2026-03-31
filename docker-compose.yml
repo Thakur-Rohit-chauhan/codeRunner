@@ -153,9 +153,13 @@ services:
       DATABASE_URL: ${SUBMISSION_DATABASE_URL}
       RABBITMQ_URL: ${RABBITMQ_URL:-amqp://guest:guest@rabbitmq:5672/}
       PROBLEM_SERVICE_GRPC: problem-service:50051
+      DOCKER_SECCOMP_PROFILE: /app/seccomp/untrusted-code.json
       LOG_LEVEL: ${LOG_LEVEL:-info}
       ENVIRONMENT: ${ENVIRONMENT:-development}
       SERVICE_NAME: judge-standard
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./services/judge-standard/seccomp:/app/seccomp:ro
     depends_on:
       postgres:
         condition: service_healthy
