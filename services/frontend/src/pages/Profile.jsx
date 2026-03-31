@@ -322,7 +322,7 @@ function PublicProfile({ username }) {
                         ].map((item) => (
                             <button
                                 key={item.label}
-                                onClick={() => navigate(`/profile/${username}/connections?tab=${item.tab}`)}
+                                onClick={() => navigate(`/profile/${encodeURIComponent(username)}/connections?tab=${item.tab}`)}
                                 style={{
                                     border: 'none',
                                     background: 'rgba(255,255,255,0.04)',
@@ -811,7 +811,7 @@ export default function Profile() {
                                 ].map((item) => (
                                     <button
                                         key={item.label}
-                                        onClick={() => navigate(`/profile/${user.username}/connections?tab=${item.tab}`)}
+                                        onClick={() => navigate(`/profile/${encodeURIComponent(user.username)}/connections?tab=${item.tab}`)}
                                         style={{
                                             border: 'none',
                                             background: 'rgba(255,255,255,0.04)',

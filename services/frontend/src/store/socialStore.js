@@ -1,10 +1,6 @@
 import { create } from 'zustand'
 
 const STORAGE_KEY = 'coderunner_social_graph_v1'
-const HANDLE_PARTS = {
-    adjectives: ['rapid', 'silent', 'neon', 'pixel', 'cyber', 'ghost', 'quantum', 'brave', 'lunar', 'matrix', 'swift', 'vector', 'alpha', 'crimson', 'silver', 'frost', 'rocket', 'turbo', 'logic', 'stellar'],
-    nouns: ['coder', 'falcon', 'stack', 'byte', 'nexus', 'orbit', 'kernel', 'shadow', 'solver', 'phoenix', 'hunter', 'signal', 'runner', 'forge', 'pilot', 'circuit', 'titan', 'vision', 'graph', 'warden'],
-}
 
 const defaultState = {
     profiles: {},
@@ -49,55 +45,22 @@ const formatDisplayName = (username = 'user') =>
         .replace(/[_-]+/g, ' ')
         .replace(/\b\w/g, (char) => char.toUpperCase())
 
-const buildSeedUsernames = (username, count, kind) => {
-    const baseSeed = usernameSeed(`${kind}:${username}`)
-    const handles = []
-    const seen = new Set()
-    let index = 0
-
-    while (handles.length < count && index < count * 6 + 60) {
-        const adjective = HANDLE_PARTS.adjectives[(baseSeed + index * 5) % HANDLE_PARTS.adjectives.length]
-        const noun = HANDLE_PARTS.nouns[(baseSeed * 3 + index * 7) % HANDLE_PARTS.nouns.length]
-        const suffix = 10 + ((baseSeed + index * 11) % 990)
-        const handle = `${adjective}_${noun}${suffix}`
-
-        if (handle !== username && !seen.has(handle)) {
-            seen.add(handle)
-            handles.push(handle)
-        }
-
-        index += 1
-    }
-
-    return handles
-}
-
 export const createSeedProfile = (username) => {
-    const seed = usernameSeed(username)
-
     return {
         username,
         displayName: formatDisplayName(username),
         avatar: null,
-        followersBase: 24 + (seed % 180),
-        followingBase: 8 + ((seed * 3) % 90),
     }
 }
 
 export const getFollowingUsernames = (username, profiles, followingByUser) => {
-    const profile = profiles[username] || createSeedProfile(username)
-    const manualFollowing = followingByUser[username] || []
-    const seedFollowing = buildSeedUsernames(username, profile.followingBase || 0, 'following')
-    return [...new Set([...manualFollowing, ...seedFollowing])]
+    return followingByUser[username] || []
 }
 
 export const getFollowerUsernames = (username, profiles, followingByUser) => {
-    const profile = profiles[username] || createSeedProfile(username)
-    const manualFollowers = Object.entries(followingByUser)
+    return Object.entries(followingByUser)
         .filter(([, targets]) => targets.includes(username))
         .map(([followerUsername]) => followerUsername)
-    const seedFollowers = buildSeedUsernames(username, profile.followersBase || 0, 'followers')
-    return [...new Set([...manualFollowers, ...seedFollowers])]
 }
 
 export const computeFollowStats = (username, profiles, followingByUser) => {

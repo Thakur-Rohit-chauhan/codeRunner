@@ -15,13 +15,6 @@ const tabs = [
     { id: 'followers', label: 'Followers' },
 ]
 
-const sanitizeUsername = (value) =>
-    value
-        .trim()
-        .toLowerCase()
-        .replace(/\s+/g, '_')
-        .replace(/[^a-z0-9_]/g, '')
-
 const avatarGradient = (username = 'user') => {
     const seed = username.split('').reduce((sum, char) => sum + char.charCodeAt(0), 0)
     const gradients = [
@@ -52,8 +45,6 @@ export default function Connections() {
             syncProfile(viewerUsername, {
                 displayName: user?.displayName,
                 avatar: user?.avatar || null,
-                followersBase: user?.followers || 0,
-                followingBase: user?.following || 0,
             })
         }
 
@@ -94,13 +85,8 @@ export default function Connections() {
             ;(contest.leaderboard || []).forEach((entry) => set.add(entry.name))
         })
 
-        const normalizedQuery = sanitizeUsername(searchQuery)
-        if (normalizedQuery && !set.has(normalizedQuery)) {
-            set.add(normalizedQuery)
-        }
-
         return Array.from(set).filter(Boolean)
-    }, [contests, followerUsernames, followingByUser, followingUsernames, profileUsername, profiles, searchQuery, viewerUsername])
+    }, [contests, followerUsernames, followingByUser, followingUsernames, profileUsername, profiles, viewerUsername])
 
     const directoryEntries = useMemo(() => (
         discoverableUsernames
@@ -154,7 +140,7 @@ export default function Connections() {
         }}>
             <div style={{ maxWidth: '920px', margin: '0 auto' }}>
                 <button
-                    onClick={() => navigate(-1)}
+                    onClick={() => profileUsername ? navigate(`/profile/${encodeURIComponent(profileUsername)}`) : navigate(-1)}
                     style={{
                         width: '40px',
                         height: '40px',
@@ -278,11 +264,12 @@ export default function Connections() {
                     {visibleEntries.length > 0 ? visibleEntries.map((entry, index) => {
                         const isViewer = entry.username === viewerUsername
                         const isFollowingEntry = viewerFollowing.includes(entry.username)
+                        const canFollow = !!viewerUsername && !isViewer
 
                         return (
                             <div
                                 key={`${activeTab}-${entry.username}`}
-                                onClick={() => navigate(`/profile/${entry.username}`)}
+                                onClick={() => navigate(`/profile/${encodeURIComponent(entry.username)}`)}
                                 style={{
                                     display: 'flex',
                                     alignItems: 'center',
@@ -342,7 +329,7 @@ export default function Connections() {
                                     </div>
                                 </div>
 
-                                {!isViewer ? (
+                                {canFollow ? (
                                     <button
                                         onClick={(event) => {
                                             event.stopPropagation()
@@ -356,11 +343,11 @@ export default function Connections() {
                                             minWidth: '118px',
                                             padding: '10px 14px',
                                             borderRadius: '12px',
-                                            border: `1px solid ${isFollowingEntry ? 'rgba(255,255,255,0.08)' : 'rgba(52,211,153,0.24)'}`,
+                                            border: `1px solid ${isFollowingEntry ? 'rgba(248,113,113,0.22)' : 'rgba(52,211,153,0.24)'}`,
                                             background: isFollowingEntry
-                                                ? 'rgba(255,255,255,0.06)'
+                                                ? 'rgba(248,113,113,0.10)'
                                                 : 'linear-gradient(135deg, rgba(52,211,153,0.2), rgba(59,130,246,0.16))',
-                                            color: isFollowingEntry ? '#d1d5db' : '#34d399',
+                                            color: isFollowingEntry ? '#fecaca' : '#34d399',
                                             fontSize: '13.5px',
                                             fontWeight: 600,
                                             cursor: 'pointer',
@@ -370,8 +357,7 @@ export default function Connections() {
                                             gap: '6px',
                                         }}
                                     >
-                                        {isFollowingEntry ? <Check size={14} /> : null}
-                                        {isFollowingEntry ? 'Following' : 'Follow'}
+                                        {isFollowingEntry ? 'Unfollow' : 'Follow'}
                                     </button>
                                 ) : (
                                     <span style={{
