@@ -6,7 +6,8 @@ import Navbar from '../components/Navbar/Navbar'
 import useAuthStore from '../store/authStore'
 import useContestStore from '../store/contestStore'
 import useSocialStore, { computeFollowStats } from '../store/socialStore'
-import { mockRecentSubmissions, mockProblems, generateHeatmapData } from '../utils/mockData'
+import useSubmissionStore from '../store/submissionStore'
+import { mockProblems } from '../utils/mockData'
 
 /* ── shared glassmorphism card style ── */
 const glassCard = {
@@ -44,6 +45,45 @@ function formatRelativeTime(isoString) {
     return `${years} year${years === 1 ? '' : 's'} ago`
 }
 
+const pad2 = (value) => String(value).padStart(2, '0')
+
+const toLocalDateKey = (date) => `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`
+
+const parseLocalDateKey = (key) => {
+    if (!key) return null
+    const parts = String(key).split('-').map((value) => Number(value))
+    if (parts.length !== 3 || parts.some((part) => Number.isNaN(part))) return null
+    const [year, month, day] = parts
+    return new Date(year, month - 1, day)
+}
+
+const buildHeatmapDataFromSubmissions = (submissions = []) => {
+    // Use local noon to avoid DST boundaries and UTC date shifting.
+    const today = new Date()
+    today.setHours(12, 0, 0, 0)
+
+    const countsByDate = {}
+    submissions.forEach((submission) => {
+        const timestamp = submission?.submittedAt
+        if (!timestamp) return
+        const date = new Date(timestamp)
+        if (Number.isNaN(date.getTime())) return
+
+        const key = toLocalDateKey(date)
+        countsByDate[key] = (countsByDate[key] || 0) + 1
+    })
+
+    const data = []
+    for (let i = 365; i >= 0; i--) {
+        const d = new Date(today)
+        d.setDate(today.getDate() - i)
+        const key = toLocalDateKey(d)
+        data.push({ date: key, count: countsByDate[key] || 0 })
+    }
+
+    return data
+}
+
 /* ── Heatmap ── */
 function ActivityHeatmap({ data }) {
     const [tooltip, setTooltip] = useState(null)
@@ -55,7 +95,7 @@ function ActivityHeatmap({ data }) {
         let lastMonth = -1
 
         // Pad so the first day lands on the correct weekday column
-        const firstDay = new Date(data[0]?.date)
+        const firstDay = parseLocalDateKey(data[0]?.date) || new Date()
         const firstDayOfWeek = firstDay.getDay() // 0=Sun
 
         // Fill leading nulls
@@ -65,7 +105,7 @@ function ActivityHeatmap({ data }) {
 
         let weekIdx = 0
         data.forEach((entry) => {
-            const date = new Date(entry.date)
+            const date = parseLocalDateKey(entry.date) || new Date()
             const dow = date.getDay()
             const month = date.getMonth()
 
@@ -95,8 +135,8 @@ function ActivityHeatmap({ data }) {
         return '#39d353'
     }
 
-    const CELL = 13
-    const GAP = 3
+    const CELL = 11
+    const GAP = 2
 
     return (
         <div style={{ position: 'relative' }}>
@@ -124,59 +164,65 @@ function ActivityHeatmap({ data }) {
                 </div>
             )}
 
-            {/* Month labels */}
-            <div style={{ display: 'flex', paddingLeft: '0px', marginBottom: '6px', position: 'relative', height: '16px' }}>
-                {monthLabels.map((ml, i) => (
-                    <span key={i} style={{
-                        position: 'absolute',
-                        left: `${ml.weekIndex * (CELL + GAP)}px`,
-                        fontSize: '11px',
-                        color: '#6b7280',
-                        fontWeight: 400,
-                        whiteSpace: 'nowrap',
-                    }}>{ml.month}</span>
-                ))}
-            </div>
-
             <div style={{ overflowX: 'auto' }}>
-                <div style={{ display: 'flex', gap: `${GAP}px`, minWidth: 'max-content' }}>
-                    {weeks.map((week, wi) => (
-                        <div key={wi} style={{ display: 'flex', flexDirection: 'column', gap: `${GAP}px` }}>
-                            {week.map((day, di) =>
-                                day ? (
-                                    <div
-                                        key={day.date}
-                                        style={{
-                                            width: `${CELL}px`, height: `${CELL}px`, borderRadius: '3px',
-                                            backgroundColor: getColor(day.count),
-                                            transition: 'transform 0.15s ease, box-shadow 0.15s ease',
-                                            cursor: 'pointer',
-                                        }}
-                                        onMouseEnter={(e) => {
-                                            e.currentTarget.style.transform = 'scale(1.35)'
-                                            e.currentTarget.style.boxShadow = day.count > 0
-                                                ? '0 0 8px rgba(57, 211, 83, 0.5)'
-                                                : '0 0 6px rgba(255,255,255,0.15)'
-                                            const rect = e.currentTarget.getBoundingClientRect()
-                                            setTooltip({
-                                                x: rect.left,
-                                                y: rect.top,
-                                                count: day.count,
-                                                date: new Date(day.date).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }),
-                                            })
-                                        }}
-                                        onMouseLeave={(e) => {
-                                            e.currentTarget.style.transform = 'scale(1)'
-                                            e.currentTarget.style.boxShadow = 'none'
-                                            setTooltip(null)
-                                        }}
-                                    />
-                                ) : (
-                                    <div key={`empty-${wi}-${di}`} style={{ width: `${CELL}px`, height: `${CELL}px` }} />
-                                )
-                            )}
-                        </div>
-                    ))}
+                <div style={{ minWidth: 'max-content' }}>
+                    {/* Month labels */}
+                    <div style={{ marginBottom: '6px', position: 'relative', height: '16px' }}>
+                        {monthLabels.map((ml, i) => (
+                            <span key={i} style={{
+                                position: 'absolute',
+                                left: `${ml.weekIndex * (CELL + GAP)}px`,
+                                top: 0,
+                                fontSize: '11px',
+                                color: '#6b7280',
+                                fontWeight: 500,
+                                whiteSpace: 'nowrap',
+                            }}>{ml.month}</span>
+                        ))}
+                    </div>
+
+                    <div style={{ display: 'flex', gap: `${GAP}px` }}>
+                        {weeks.map((week, wi) => (
+                            <div key={wi} style={{ display: 'flex', flexDirection: 'column', gap: `${GAP}px` }}>
+                                {week.map((day, di) =>
+                                    day ? (
+                                        <div
+                                            key={day.date}
+                                            style={{
+                                                width: `${CELL}px`, height: `${CELL}px`, borderRadius: '3px',
+                                                backgroundColor: getColor(day.count),
+                                                border: '1px solid rgba(255,255,255,0.03)',
+                                                transition: 'transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease',
+                                                cursor: 'pointer',
+                                            }}
+                                            onMouseEnter={(e) => {
+                                                if (day.count <= 0) return
+                                                e.currentTarget.style.transform = 'scale(1.25)'
+                                                e.currentTarget.style.borderColor = 'rgba(57, 211, 83, 0.35)'
+                                                e.currentTarget.style.boxShadow = '0 0 10px rgba(57, 211, 83, 0.35)'
+                                                const rect = e.currentTarget.getBoundingClientRect()
+                                                const parsed = parseLocalDateKey(day.date) || new Date()
+                                                setTooltip({
+                                                    x: rect.left,
+                                                    y: rect.top,
+                                                    count: day.count,
+                                                    date: parsed.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }),
+                                                })
+                                            }}
+                                            onMouseLeave={(e) => {
+                                                e.currentTarget.style.transform = 'scale(1)'
+                                                e.currentTarget.style.borderColor = 'rgba(255,255,255,0.03)'
+                                                e.currentTarget.style.boxShadow = 'none'
+                                                setTooltip(null)
+                                            }}
+                                        />
+                                    ) : (
+                                        <div key={`empty-${wi}-${di}`} style={{ width: `${CELL}px`, height: `${CELL}px` }} />
+                                    )
+                                )}
+                            </div>
+                        ))}
+                    </div>
                 </div>
             </div>
         </div>
@@ -413,51 +459,85 @@ function PublicProfile({ username }) {
 
 /* ─── Profile Page ─── */
 export default function Profile() {
-    const { user } = useAuthStore()
+    const viewerUser = useAuthStore((state) => state.user)
+    const userDirectory = useAuthStore((state) => state.users)
     const contests = useContestStore((state) => state.contests)
-    const { profiles, followingByUser, syncProfile } = useSocialStore()
+    const { profiles, followingByUser, syncProfile, followProfile, unfollowProfile } = useSocialStore()
+    const submissionsByUser = useSubmissionStore((state) => state.submissionsByUser)
     const { username } = useParams()
     const navigate = useNavigate()
     const [activeTab, setActiveTab] = useState('recent')
     const [isSubmissionPanelOpen, setIsSubmissionPanelOpen] = useState(false)
-    const [profileData, setProfileData] = useState(user)
+    const [profileData, setProfileData] = useState(viewerUser)
+
+    const profileUsername = username || viewerUser?.username || ''
+    const userSubmissions = submissionsByUser?.[profileUsername] || []
+    const isOwnProfile = profileUsername === viewerUser?.username
+    const profileUser = isOwnProfile ? viewerUser : (userDirectory?.[profileUsername] || null)
 
     useEffect(() => {
-        if (user) {
-            const localSettings = JSON.parse(localStorage.getItem('coderunner_settings')) || {}
-            const heatmap = localSettings.heatmap !== undefined ? localSettings.heatmap : true
-            const recentAC = localSettings.recentAC !== undefined ? localSettings.recentAC : true
-            setProfileData({ ...user, ...localSettings, heatmap, recentAC })
-        }
-    }, [user])
+        if (!profileUser) return
+        const heatmap = profileUser.heatmap !== undefined ? profileUser.heatmap : true
+        const recentAC = profileUser.recentAC !== undefined ? profileUser.recentAC : true
+        setProfileData({ ...profileUser, heatmap, recentAC })
+    }, [profileUser])
 
     useEffect(() => {
-        if (!user?.username) return
+        if (!profileUser?.username) return
 
-        syncProfile(user.username, {
-            displayName: profileData?.displayName || user.displayName,
-            avatar: profileData?.avatar || user.avatar || null,
-            followersBase: user.followers || 0,
-            followingBase: user.following || 0,
+        syncProfile(profileUser.username, {
+            displayName: profileData?.displayName || profileUser.displayName,
+            avatar: profileData?.avatar || profileUser.avatar || null,
         })
     }, [
         profileData?.avatar,
         profileData?.displayName,
+        profileUser?.avatar,
+        profileUser?.displayName,
+        profileUser?.username,
         syncProfile,
-        user?.avatar,
-        user?.displayName,
-        user?.followers,
-        user?.following,
-        user?.username,
     ])
 
-    // If visiting another user's profile, show public view
-    const isOwnProfile = !username || username === user?.username
-    if (!isOwnProfile) return <PublicProfile username={username} />
+    if (!profileUser || !profileData || !viewerUser) {
+        return (
+            <div style={{ minHeight: '100vh', background: 'linear-gradient(135deg, #0b0f19 0%, #161b22 100%)', color: '#e5e7eb', fontFamily: '"Inter", \"Roboto\", sans-serif' }}>
+                <Navbar />
+                <div style={{ maxWidth: '920px', margin: '0 auto', padding: '48px 32px' }}>
+                    <button onClick={() => navigate(-1)} style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '18px', background: 'none', border: 'none', color: '#6b7280', cursor: 'pointer', fontSize: '13.5px', fontWeight: 600, fontFamily: 'inherit', padding: 0 }}>
+                        ← Back
+                    </button>
+                    <div style={{ ...glassCard, padding: '28px', textAlign: 'center' }}>
+                        <p style={{ color: '#9ca3af', fontSize: '14px' }}>
+                            {profileUsername ? `User "${profileUsername}" was not found in the local user database.` : 'User not found.'}
+                        </p>
+                        <p style={{ marginTop: '10px', color: '#6b7280', fontSize: '13px' }}>
+                            Create an account for this username (Register) to make it appear here.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        )
+    }
 
-    if (!profileData || !user) return null
+    const directoryUsernameSet = useMemo(() => new Set(Object.keys(userDirectory || {})), [userDirectory])
 
-    const ownFollowStats = computeFollowStats(user.username, profiles, followingByUser)
+    const ownFollowStats = useMemo(() => {
+        const followers = Object.entries(followingByUser).reduce((count, [followerUsername, targets]) => {
+            if (!directoryUsernameSet.has(followerUsername)) return count
+            return targets.includes(profileUser.username) ? count + 1 : count
+        }, 0)
+        const following = (followingByUser[profileUser.username] || [])
+            .filter((candidate) => directoryUsernameSet.has(candidate)).length
+        const profile = profiles[profileUser.username] || {
+            username: profileUser.username,
+            displayName: profileUser.displayName,
+            avatar: profileUser.avatar || null,
+        }
+
+        return { followers, following, profile }
+    }, [directoryUsernameSet, followingByUser, profileUser.avatar, profileUser.displayName, profileUser.username, profiles])
+
+    const isFollowingProfile = !isOwnProfile && (followingByUser[viewerUser.username] || []).includes(profileUser.username)
 
     const customSkillsArray = profileData.skills ? profileData.skills.split(',').map(s => s.trim()).filter(Boolean) : []
     const dynamicSkills = useMemo(() => {
@@ -489,8 +569,8 @@ export default function Profile() {
         { id: 'solutions', label: 'Solutions', icon: <CheckSquare style={{ width: '14px', height: '14px' }} /> },
     ]
 
-    // Generate heatmap data dynamically from real problem submissions
-    const heatmapData = useMemo(() => generateHeatmapData(mockProblems), [mockProblems])
+    // Generate heatmap data from the actual submission history for this profile.
+    const heatmapData = useMemo(() => buildHeatmapDataFromSubmissions(userSubmissions), [userSubmissions])
 
     const problemSummary = useMemo(() => {
         const difficulties = {
@@ -554,7 +634,7 @@ export default function Profile() {
 
     const contestInsights = useMemo(() => {
         const participatedContests = [...contests]
-            .filter((contest) => contest.status === 'past' && contest.results && (contest.results.userRank || contest.results.userScore || contest.results.userAccuracy))
+            .filter((contest) => contest.status === 'past')
             .sort((a, b) => new Date(a.startTime) - new Date(b.startTime))
 
         const summarizeContests = (items) => {
@@ -570,17 +650,21 @@ export default function Profile() {
 
             const performance = items.map((contest) => {
                 const totalParticipants = Math.max(contest.participants || 0, contest.leaderboard?.length || 0, 1)
-                const userRank = Math.min(contest.results?.userRank || totalParticipants, totalParticipants)
+                const leaderboardRow = (contest.leaderboard || []).find((row) => row.name === profileUser.username) || null
+                const rawRank = contest.results && isOwnProfile ? contest.results.userRank : leaderboardRow?.rank
+                const userRank = Math.min(rawRank || totalParticipants, totalParticipants)
                 const percentile = totalParticipants > 1
                     ? 1 - ((userRank - 1) / (totalParticipants - 1))
                     : 1
 
                 let metricScore = 0
                 if ((contest.ranking || 'score') === 'accuracy') {
-                    metricScore = Math.round((contest.results?.userAccuracy || 0) * 100)
+                    const accuracy = contest.results && isOwnProfile ? contest.results.userAccuracy : leaderboardRow?.accuracy
+                    metricScore = Math.round((accuracy || 0) * 100)
                 } else {
-                    const topScore = Math.max(contest.leaderboard?.[0]?.score || 0, contest.results?.userScore || 0, 1)
-                    metricScore = Math.round(((contest.results?.userScore || 0) / topScore) * 100)
+                    const topScore = Math.max(contest.leaderboard?.[0]?.score || 0, 1)
+                    const userScore = contest.results && isOwnProfile ? contest.results.userScore : leaderboardRow?.score
+                    metricScore = Math.round(((userScore || 0) / topScore) * 100)
                 }
 
                 return {
@@ -588,8 +672,21 @@ export default function Profile() {
                     totalParticipants,
                     percentile,
                     metricScore,
+                    userRank,
                 }
             })
+                .filter((entry) => Number.isFinite(entry.userRank))
+
+            if (performance.length === 0) {
+                return {
+                    rating: 1200,
+                    globalRanking: 0,
+                    totalPopulation: 0,
+                    attended: 0,
+                    topPercent: 0,
+                    history: [{ date: 'Start', rating: 1200, title: 'No contests yet', rank: null }],
+                }
+            }
 
             const avgPercentile = performance.reduce((sum, item) => sum + item.percentile, 0) / performance.length
             const avgMetricScore = performance.reduce((sum, item) => sum + item.metricScore, 0) / performance.length
@@ -602,19 +699,26 @@ export default function Profile() {
                 rating,
                 globalRanking,
                 totalPopulation,
-                attended: items.length,
+                attended: performance.length,
                 topPercent,
             }
         }
 
-        const summary = summarizeContests(participatedContests)
-        const history = participatedContests.map((contest, index) => {
-            const snapshot = summarizeContests(participatedContests.slice(0, index + 1))
+        const participated = participatedContests.filter((contest) => {
+            if (contest.results && isOwnProfile) return contest.results.userRank || contest.results.userScore || contest.results.userAccuracy
+            return (contest.leaderboard || []).some((row) => row.name === profileUser.username)
+        })
+
+        const summary = summarizeContests(participated)
+        const history = participated.map((contest, index) => {
+            const snapshot = summarizeContests(participated.slice(0, index + 1))
             return {
                 date: new Date(contest.startTime).toLocaleDateString('en-US', { month: 'short' }),
                 rating: snapshot.rating,
                 title: contest.title,
-                rank: contest.results?.userRank || null,
+                rank: contest.results && isOwnProfile
+                    ? contest.results.userRank || null
+                    : (contest.leaderboard || []).find((row) => row.name === profileUser.username)?.rank || null,
             }
         })
 
@@ -622,36 +726,12 @@ export default function Profile() {
             ...summary,
             history: history.length > 0 ? history : [{ date: 'Start', rating: summary.rating, title: 'No contests yet', rank: null }],
         }
-    }, [contests])
-
-    const badges = useMemo(() => {
-        const solvedHardProblems = problemSummary.difficulties.Hard?.solved || 0
-        const solvedMlProblems = problemSummary.domains.ML?.solved || 0
-        const solvedCtfProblems = problemSummary.domains.CTF?.solved || 0
-        const currentLongestStreak = Math.max(user.streak || 0, maxStreak)
-        const contributionCount = (user.solutions || 0) + (user.discussions || 0)
-
-        return [
-            { name: '100 Day Streak', emoji: '🔥', earned: currentLongestStreak >= 100 },
-            { name: 'Contest Winner', emoji: '🏆', earned: contestInsights.attended >= 3 && contestInsights.rating >= 1750 },
-            { name: 'Top Contributor', emoji: '⭐', earned: (user.reputation || 0) >= 400 && contributionCount >= 40 },
-            { name: 'Bug Hunter', emoji: '🐛', earned: solvedHardProblems >= 2 },
-            { name: 'ML Master', emoji: '🧠', earned: solvedMlProblems >= 2 },
-            { name: 'CTF Champion', emoji: '🛡️', earned: solvedCtfProblems >= 2 },
-        ]
-    }, [contestInsights, maxStreak, problemSummary, user])
+    }, [contests, isOwnProfile, profileUser.username])
 
     const languageStats = useMemo(() => {
-        const counts = {}
-        mockRecentSubmissions.forEach(sub => {
-            if (sub.status === 'Accepted') {
-                counts[sub.language] = (counts[sub.language] || 0) + 1
-            }
-        })
-        return Object.entries(counts)
-            .map(([name, count]) => ({ name, count }))
-            .sort((a, b) => b.count - a.count)
-    }, [])
+        const langs = profileUser.languages || []
+        return [...langs].sort((a, b) => (b.count || 0) - (a.count || 0))
+    }, [profileUser.languages])
 
     const problemLookup = useMemo(
         () => new Map(mockProblems.map((problem) => [problem.title, problem])),
@@ -659,19 +739,23 @@ export default function Profile() {
     )
 
     const recentSubmissionRows = useMemo(() => (
-        mockRecentSubmissions.map((submission) => {
-            const linkedProblem = problemLookup.get(submission.problem)
+        userSubmissions.map((submission) => {
+            const linkedProblem = submission.problemId
+                ? { id: submission.problemId }
+                : problemLookup.get(submission.problemTitle)
+            const status = submission.status || 'Unknown'
+            const runtime = submission.runtime || ''
 
             return {
                 id: `recent-${submission.id}`,
-                title: submission.problem,
-                subtitle: `${submission.language} • ${submission.status}${submission.runtime && submission.runtime !== '—' ? ` • ${submission.runtime}` : ''}`,
-                time: submission.time,
-                dotColor: submission.status === 'Accepted' ? '#34d399' : '#f87171',
+                title: submission.problemTitle || 'Untitled problem',
+                subtitle: `${submission.language || '—'} • ${status}${runtime ? ` • ${runtime}` : ''}`,
+                time: formatRelativeTime(submission.submittedAt),
+                dotColor: status.toLowerCase() === 'accepted' ? '#34d399' : '#f87171',
                 href: linkedProblem ? `/problems/${linkedProblem.id}` : null,
             }
         })
-    ), [problemLookup])
+    ), [problemLookup, userSubmissions])
 
     const bookmarkedRows = useMemo(() => (
         mockProblems
@@ -783,19 +867,7 @@ export default function Profile() {
                             )}
 
                             <h1 style={{ fontSize: '20px', fontWeight: 700, color: '#fff', marginBottom: '4px' }}>{profileData.displayName}</h1>
-                            <p style={{ fontSize: '14px', color: '#6b7280', marginBottom: '4px' }}>@{user.username}</p>
-
-                            {/* Rank badge */}
-                            <div style={{
-                                display: 'inline-flex', alignItems: 'center', gap: '6px',
-                                padding: '4px 14px', borderRadius: '20px',
-                                background: 'rgba(251, 191, 36, 0.1)',
-                                border: '1px solid rgba(251, 191, 36, 0.2)',
-                                marginTop: '8px', marginBottom: '16px',
-                            }}>
-                                <Award style={{ width: '14px', height: '14px', color: '#fbbf24' }} />
-                                <span style={{ fontSize: '12px', fontWeight: 600, color: '#fbbf24' }}>{user.rank}</span>
-                            </div>
+                            <p style={{ fontSize: '14px', color: '#6b7280', marginBottom: '16px' }}>@{profileUser.username}</p>
 
                             {/* Followers / Following */}
                             <div style={{
@@ -811,7 +883,7 @@ export default function Profile() {
                                 ].map((item) => (
                                     <button
                                         key={item.label}
-                                        onClick={() => navigate(`/profile/${encodeURIComponent(user.username)}/connections?tab=${item.tab}`)}
+                                        onClick={() => navigate(`/profile/${encodeURIComponent(profileUser.username)}/connections?tab=${item.tab}`)}
                                         style={{
                                             border: 'none',
                                             background: 'rgba(255,255,255,0.04)',
@@ -835,30 +907,60 @@ export default function Profile() {
                                 ))}
                             </div>
 
-                            {/* Edit Profile button */}
-                            <button style={{
-                                width: '100%', padding: '10px 0', borderRadius: '12px',
-                                background: 'linear-gradient(135deg, rgba(52, 211, 153, 0.15), rgba(59, 130, 246, 0.15))',
-                                border: '1px solid rgba(52, 211, 153, 0.25)',
-                                color: '#34d399', fontSize: '14px', fontWeight: 600,
-                                cursor: 'pointer', transition: 'all 0.25s ease',
-                                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
-                            }}
-                                onClick={() => navigate('/settings')}
-                                onMouseEnter={(e) => {
-                                    e.currentTarget.style.background = 'linear-gradient(135deg, rgba(52, 211, 153, 0.25), rgba(59, 130, 246, 0.25))'
-                                    e.currentTarget.style.transform = 'translateY(-1px)'
-                                    e.currentTarget.style.boxShadow = '0 4px 20px rgba(52, 211, 153, 0.15)'
+                            {isOwnProfile ? (
+                                <button style={{
+                                    width: '100%', padding: '10px 0', borderRadius: '12px',
+                                    background: 'linear-gradient(135deg, rgba(52, 211, 153, 0.15), rgba(59, 130, 246, 0.15))',
+                                    border: '1px solid rgba(52, 211, 153, 0.25)',
+                                    color: '#34d399', fontSize: '14px', fontWeight: 600,
+                                    cursor: 'pointer', transition: 'all 0.25s ease',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
                                 }}
-                                onMouseLeave={(e) => {
-                                    e.currentTarget.style.background = 'linear-gradient(135deg, rgba(52, 211, 153, 0.15), rgba(59, 130, 246, 0.15))'
-                                    e.currentTarget.style.transform = 'translateY(0)'
-                                    e.currentTarget.style.boxShadow = 'none'
+                                    onClick={() => navigate('/settings')}
+                                    onMouseEnter={(e) => {
+                                        e.currentTarget.style.background = 'linear-gradient(135deg, rgba(52, 211, 153, 0.25), rgba(59, 130, 246, 0.25))'
+                                        e.currentTarget.style.transform = 'translateY(-1px)'
+                                        e.currentTarget.style.boxShadow = '0 4px 20px rgba(52, 211, 153, 0.15)'
+                                    }}
+                                    onMouseLeave={(e) => {
+                                        e.currentTarget.style.background = 'linear-gradient(135deg, rgba(52, 211, 153, 0.15), rgba(59, 130, 246, 0.15))'
+                                        e.currentTarget.style.transform = 'translateY(0)'
+                                        e.currentTarget.style.boxShadow = 'none'
+                                    }}
+                                >
+                                    <Edit style={{ width: '14px', height: '14px' }} />
+                                    Edit Profile
+                                </button>
+                            ) : (
+                                <button style={{
+                                    width: '100%', padding: '10px 0', borderRadius: '12px',
+                                    background: isFollowingProfile
+                                        ? 'rgba(248,113,113,0.10)'
+                                        : 'linear-gradient(135deg, rgba(52, 211, 153, 0.15), rgba(59, 130, 246, 0.15))',
+                                    border: `1px solid ${isFollowingProfile ? 'rgba(248,113,113,0.22)' : 'rgba(52, 211, 153, 0.25)'}`,
+                                    color: isFollowingProfile ? '#fecaca' : '#34d399',
+                                    fontSize: '14px', fontWeight: 600,
+                                    cursor: 'pointer', transition: 'all 0.25s ease',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
                                 }}
-                            >
-                                <Edit style={{ width: '14px', height: '14px' }} />
-                                Edit Profile
-                            </button>
+                                    onClick={() => {
+                                        if (isFollowingProfile) unfollowProfile(viewerUser.username, profileUser.username)
+                                        else followProfile(viewerUser.username, profileUser.username)
+                                    }}
+                                    onMouseEnter={(e) => {
+                                        e.currentTarget.style.transform = 'translateY(-1px)'
+                                        e.currentTarget.style.boxShadow = isFollowingProfile
+                                            ? '0 4px 20px rgba(248, 113, 113, 0.12)'
+                                            : '0 4px 20px rgba(52, 211, 153, 0.15)'
+                                    }}
+                                    onMouseLeave={(e) => {
+                                        e.currentTarget.style.transform = 'translateY(0)'
+                                        e.currentTarget.style.boxShadow = 'none'
+                                    }}
+                                >
+                                    {isFollowingProfile ? 'Unfollow' : 'Follow'}
+                                </button>
+                            )}
                         </div>
 
                         {/* Bio / Links */}
@@ -908,10 +1010,10 @@ export default function Profile() {
                             <h3 style={{ fontSize: '14px', fontWeight: 600, color: '#e5e7eb', marginBottom: '16px' }}>Community Stats</h3>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                                 {[
-                                    { icon: <Eye style={{ width: '15px', height: '15px' }} />, label: 'Views', value: user.views, color: '#60a5fa' },
-                                    { icon: <CheckSquare style={{ width: '15px', height: '15px' }} />, label: 'Solution', value: user.solutions, color: '#34d399' },
-                                    { icon: <MessageSquare style={{ width: '15px', height: '15px' }} />, label: 'Discuss', value: user.discussions, color: '#a78bfa' },
-                                    { icon: <Star style={{ width: '15px', height: '15px' }} />, label: 'Reputation', value: user.reputation, color: '#fbbf24' },
+                                    { icon: <Eye style={{ width: '15px', height: '15px' }} />, label: 'Views', value: profileUser.views, color: '#60a5fa' },
+                                    { icon: <CheckSquare style={{ width: '15px', height: '15px' }} />, label: 'Solution', value: profileUser.solutions, color: '#34d399' },
+                                    { icon: <MessageSquare style={{ width: '15px', height: '15px' }} />, label: 'Discuss', value: profileUser.discussions, color: '#a78bfa' },
+                                    { icon: <Star style={{ width: '15px', height: '15px' }} />, label: 'Reputation', value: profileUser.reputation, color: '#fbbf24' },
                                 ].map(({ icon, label, value, color }) => (
                                     <div key={label} style={{
                                         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
@@ -1067,67 +1169,13 @@ export default function Profile() {
                             </div>
                         </div>
 
-                        {/* Problems Solved + Badges row */}
-                        <div style={{ display: 'flex', gap: '16px' }}>
-                            {/* Donut */}
-                            <div style={{ ...glassCard, padding: '24px', flex: 1 }}>
-                                <SolvedDonut
-                                    difficultyStats={problemSummary.difficulties}
-                                    totalProblems={problemSummary.total}
-                                    totalSolved={problemSummary.solved}
-                                />
-                            </div>
-
-                            {/* Badges */}
-                            <div style={{ ...glassCard, padding: '24px', width: '280px' }}>
-                                <div style={{
-                                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                                    marginBottom: '16px',
-                                }}>
-                                    <h3 style={{ fontSize: '14px', fontWeight: 600, color: '#e5e7eb' }}>Badges</h3>
-                                    <span style={{
-                                        fontSize: '20px', fontWeight: 700, color: '#fff',
-                                    }}>{badges.filter(b => b.earned).length}</span>
-                                </div>
-                                <div style={{
-                                    display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)',
-                                    gap: '8px',
-                                }}>
-                                    {badges.map((b) => (
-                                        <div
-                                            key={b.name}
-                                            style={{
-                                                display: 'flex', flexDirection: 'column',
-                                                alignItems: 'center', gap: '4px',
-                                                padding: '10px 6px', borderRadius: '12px',
-                                                backgroundColor: b.earned ? 'rgba(255,255,255,0.04)' : 'transparent',
-                                                border: b.earned ? '1px solid rgba(255,255,255,0.06)' : '1px solid transparent',
-                                                opacity: b.earned ? 1 : 0.35,
-                                                cursor: 'default',
-                                                transition: 'all 0.2s',
-                                            }}
-                                            onMouseEnter={(e) => {
-                                                if (b.earned) {
-                                                    e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.08)'
-                                                    e.currentTarget.style.transform = 'translateY(-2px)'
-                                                }
-                                            }}
-                                            onMouseLeave={(e) => {
-                                                if (b.earned) {
-                                                    e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.04)'
-                                                    e.currentTarget.style.transform = 'translateY(0)'
-                                                }
-                                            }}
-                                        >
-                                            <span style={{ fontSize: '22px' }}>{b.emoji}</span>
-                                            <span style={{
-                                                fontSize: '10px', color: '#9ca3af',
-                                                textAlign: 'center', lineHeight: '1.3',
-                                            }}>{b.name}</span>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
+                        {/* Problems Solved */}
+                        <div style={{ ...glassCard, padding: '24px' }}>
+                            <SolvedDonut
+                                difficultyStats={problemSummary.difficulties}
+                                totalProblems={problemSummary.total}
+                                totalSolved={problemSummary.solved}
+                            />
                         </div>
 
                         {/* Activity Heatmap */}
@@ -1160,8 +1208,11 @@ export default function Profile() {
                                     Less
                                     {[0, 2, 4, 6, 8].map((v) => (
                                         <div key={v} style={{
-                                            width: '12px', height: '12px', borderRadius: '3px',
-                                            backgroundColor: v === 0 ? 'rgba(255,255,255,0.03)' : v <= 2 ? '#0e4429' : v <= 4 ? '#006d32' : v <= 6 ? '#26a641' : '#39d353',
+                                            width: '11px',
+                                            height: '11px',
+                                            borderRadius: '3px',
+                                            border: '1px solid rgba(255,255,255,0.03)',
+                                            backgroundColor: v === 0 ? 'rgba(255,255,255,0.04)' : v <= 2 ? '#0e4429' : v <= 4 ? '#006d32' : v <= 6 ? '#26a641' : '#39d353',
                                         }} />
                                     ))}
                                     More

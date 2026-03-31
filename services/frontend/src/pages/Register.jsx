@@ -118,13 +118,13 @@ export default function Register() {
         if (!agreedTerms) {
             return toast.error('You must agree to the Terms of Service')
         }
-        mockLogin()
+        mockLogin({ username: form.username, email: form.email, displayName: form.fullName })
         toast.success('Account created successfully!')
         navigate('/problems')
     }
 
     const handleGoogle = () => {
-        mockLogin()
+        mockLogin({ email: form.email || 'google.user@coderunner.dev', displayName: form.fullName || 'Google User' })
         toast.success('Signed in with Google')
         navigate('/problems')
     }

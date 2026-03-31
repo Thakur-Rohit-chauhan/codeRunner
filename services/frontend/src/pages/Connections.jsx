@@ -1,10 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, Search, Check } from 'lucide-react'
+import { ArrowLeft, Search } from 'lucide-react'
 import useAuthStore from '../store/authStore'
-import useContestStore from '../store/contestStore'
 import useSocialStore, {
-    computeFollowStats,
     createSeedProfile,
     getFollowerUsernames,
     getFollowingUsernames,
@@ -30,8 +28,8 @@ const avatarGradient = (username = 'user') => {
 export default function Connections() {
     const navigate = useNavigate()
     const { username } = useParams()
-    const { user } = useAuthStore()
-    const contests = useContestStore((state) => state.contests)
+    const user = useAuthStore((state) => state.user)
+    const users = useAuthStore((state) => state.users)
     const { profiles, followingByUser, syncProfile, followProfile, unfollowProfile } = useSocialStore()
     const [searchParams, setSearchParams] = useSearchParams()
     const [searchQuery, setSearchQuery] = useState('')
@@ -39,6 +37,9 @@ export default function Connections() {
     const activeTab = searchParams.get('tab') === 'followers' ? 'followers' : 'following'
     const profileUsername = username || user?.username || ''
     const viewerUsername = user?.username || ''
+    const directoryUsernames = useMemo(() => Object.keys(users || {}), [users])
+    const directoryUsernameSet = useMemo(() => new Set(directoryUsernames), [directoryUsernames])
+    const profileDirectoryUser = users?.[profileUsername] || null
 
     useEffect(() => {
         if (viewerUsername) {
@@ -49,74 +50,68 @@ export default function Connections() {
         }
 
         if (profileUsername) {
-            syncProfile(profileUsername)
+            syncProfile(profileUsername, {
+                displayName: profileDirectoryUser?.displayName,
+                avatar: profileDirectoryUser?.avatar || null,
+            })
         }
-    }, [profileUsername, syncProfile, user?.avatar, user?.displayName, user?.followers, user?.following, viewerUsername])
+    }, [profileDirectoryUser?.avatar, profileDirectoryUser?.displayName, profileUsername, syncProfile, user?.avatar, user?.displayName, viewerUsername])
 
     const followerUsernames = useMemo(
-        () => getFollowerUsernames(profileUsername, profiles, followingByUser),
-        [profileUsername, profiles, followingByUser]
+        () => getFollowerUsernames(profileUsername, profiles, followingByUser).filter((entryUsername) => directoryUsernameSet.has(entryUsername)),
+        [profileUsername, profiles, followingByUser, directoryUsernameSet]
     )
     const followingUsernames = useMemo(
-        () => getFollowingUsernames(profileUsername, profiles, followingByUser),
-        [profileUsername, profiles, followingByUser]
+        () => getFollowingUsernames(profileUsername, profiles, followingByUser).filter((entryUsername) => directoryUsernameSet.has(entryUsername)),
+        [profileUsername, profiles, followingByUser, directoryUsernameSet]
     )
-    const profileStats = useMemo(
-        () => computeFollowStats(profileUsername, profiles, followingByUser),
-        [profileUsername, profiles, followingByUser]
+    const profileStats = useMemo(() => ({
+        followers: followerUsernames.length,
+        following: followingUsernames.length,
+    }), [followerUsernames.length, followingUsernames.length])
+
+    const viewerFollowing = useMemo(
+        () => (followingByUser[viewerUsername] || []).filter((entryUsername) => directoryUsernameSet.has(entryUsername)),
+        [directoryUsernameSet, followingByUser, viewerUsername]
     )
-    const viewerFollowing = followingByUser[viewerUsername] || []
-
-    const discoverableUsernames = useMemo(() => {
-        const set = new Set([
-            profileUsername,
-            viewerUsername,
-            ...Object.keys(profiles),
-            ...Object.keys(followingByUser),
-            ...followerUsernames,
-            ...followingUsernames,
-        ])
-
-        Object.values(followingByUser).forEach((targets) => {
-            targets.forEach((target) => set.add(target))
-        })
-
-        contests.forEach((contest) => {
-            ;(contest.leaderboard || []).forEach((entry) => set.add(entry.name))
-        })
-
-        return Array.from(set).filter(Boolean)
-    }, [contests, followerUsernames, followingByUser, followingUsernames, profileUsername, profiles, viewerUsername])
 
     const directoryEntries = useMemo(() => (
-        discoverableUsernames
-            .filter((entryUsername) => entryUsername !== profileUsername || activeTab !== 'following' || searchQuery.trim().length > 0)
+        directoryUsernames
             .map((entryUsername) => {
-                const stats = computeFollowStats(entryUsername, profiles, followingByUser)
+                const directoryProfile = users?.[entryUsername]
+                const followers = getFollowerUsernames(entryUsername, profiles, followingByUser)
+                    .filter((candidate) => directoryUsernameSet.has(candidate)).length
+                const following = getFollowingUsernames(entryUsername, profiles, followingByUser)
+                    .filter((candidate) => directoryUsernameSet.has(candidate)).length
+
                 return {
                     username: entryUsername,
-                    displayName: stats.profile.displayName || createSeedProfile(entryUsername).displayName,
-                    avatar: stats.profile.avatar || null,
-                    followers: stats.followers,
-                    following: stats.following,
+                    displayName: directoryProfile?.displayName || createSeedProfile(entryUsername).displayName,
+                    avatar: directoryProfile?.avatar || null,
+                    followers,
+                    following,
                 }
             })
             .sort((a, b) => a.displayName.localeCompare(b.displayName))
-    ), [activeTab, discoverableUsernames, followingByUser, profileUsername, profiles, searchQuery])
+    ), [directoryUsernames, directoryUsernameSet, followingByUser, profiles, users])
 
     const activeUsernames = activeTab === 'followers' ? followerUsernames : followingUsernames
     const activeEntries = useMemo(() => (
         activeUsernames.map((entryUsername) => {
-            const stats = computeFollowStats(entryUsername, profiles, followingByUser)
+            const directoryProfile = users?.[entryUsername]
+            const followers = getFollowerUsernames(entryUsername, profiles, followingByUser)
+                .filter((candidate) => directoryUsernameSet.has(candidate)).length
+            const following = getFollowingUsernames(entryUsername, profiles, followingByUser)
+                .filter((candidate) => directoryUsernameSet.has(candidate)).length
             return {
                 username: entryUsername,
-                displayName: stats.profile.displayName || createSeedProfile(entryUsername).displayName,
-                avatar: stats.profile.avatar || null,
-                followers: stats.followers,
-                following: stats.following,
+                displayName: directoryProfile?.displayName || createSeedProfile(entryUsername).displayName,
+                avatar: directoryProfile?.avatar || null,
+                followers,
+                following,
             }
         })
-    ), [activeUsernames, followingByUser, profiles])
+    ), [activeUsernames, directoryUsernameSet, followingByUser, profiles, users])
 
     const filteredSearchEntries = useMemo(() => {
         const normalizedQuery = searchQuery.trim().toLowerCase()
@@ -177,7 +172,7 @@ export default function Connections() {
                 }}>
                     <div>
                         <h1 style={{ fontSize: '24px', fontWeight: 800, color: '#f8fafc', marginBottom: '6px' }}>
-                            {profiles[profileUsername]?.displayName || createSeedProfile(profileUsername).displayName}
+                            {profileDirectoryUser?.displayName || profiles[profileUsername]?.displayName || createSeedProfile(profileUsername).displayName}
                         </h1>
                         <p style={{ fontSize: '13.5px', color: '#8b92a4' }}>
                             @{profileUsername} • {profileStats.followers.toLocaleString()} followers • {profileStats.following.toLocaleString()} following

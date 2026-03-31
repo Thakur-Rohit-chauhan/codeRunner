@@ -77,38 +77,30 @@ export default function Settings() {
     const navigate = useNavigate();
     const fileInputRef = useRef(null);
 
-    // Default or user settings
-    const [profile, setProfile] = useState(() => {
-        const localData = JSON.parse(localStorage.getItem('coderunner_settings')) || {};
-        return {
-            displayName: user?.displayName || 'Code Runner',
-            gender: localData.gender || 'Male',
-            location: localData.location || user?.location || 'India, Maharashtra, Nagpur',
-            birthday: localData.birthday || 'April 21, 2005',
-            websites: localData.websites || '',
-            github: localData.github || 'https://github.com/ayushr27',
-            linkedin: localData.linkedin || 'https://linkedin.com/in/i-am-ayush-rahate',
-            x: localData.x || '',
-            readme: localData.readme || '',
-            work: localData.work || '',
-            education: localData.education || '',
-            skills: localData.skills || '',
-            recentAC: localData.recentAC !== undefined ? localData.recentAC : true,
-            heatmap: localData.heatmap !== undefined ? localData.heatmap : true,
-            avatar: user?.avatar || localData.avatar || null
-        };
-    });
+    const buildProfileFromUser = (currentUser) => ({
+        displayName: currentUser?.displayName || 'Code Runner',
+        gender: currentUser?.gender || 'Male',
+        location: currentUser?.location || 'India',
+        birthday: currentUser?.birthday || '',
+        websites: currentUser?.websites || '',
+        github: currentUser?.github || '',
+        linkedin: currentUser?.linkedin || '',
+        x: currentUser?.x || '',
+        readme: currentUser?.readme || '',
+        work: currentUser?.work || '',
+        education: currentUser?.education || '',
+        skills: currentUser?.skills || '',
+        recentAC: currentUser?.recentAC !== undefined ? currentUser.recentAC : true,
+        heatmap: currentUser?.heatmap !== undefined ? currentUser.heatmap : true,
+        avatar: currentUser?.avatar || null,
+    })
+
+    // Settings are stored per-user in the auth store (local user directory), not a shared localStorage key.
+    const [profile, setProfile] = useState(() => buildProfileFromUser(user));
 
     useEffect(() => {
-        try {
-            localStorage.setItem('coderunner_settings', JSON.stringify(profile));
-        } catch (error) {
-            console.error('Failed to save settings: ', error);
-            if (error.name === 'QuotaExceededError') {
-                alert('Image is too large to save in local storage. Please choose a smaller image.');
-            }
-        }
-    }, [profile]);
+        setProfile(buildProfileFromUser(user))
+    }, [user?.username]);
 
     // Modal State
     const [editModal, setEditModal] = useState({ isOpen: false, key: '', label: '', value: '' });
@@ -121,11 +113,7 @@ export default function Settings() {
     const handleSave = () => {
         const { key, value } = editModal;
         setProfile(prev => ({ ...prev, [key]: value }));
-        
-        // If it's something global like display name or avatar, update global store
-        if (key === 'displayName' || key === 'location' || key === 'avatar') {
-            updateUser({ [key]: value });
-        }
+        updateUser({ [key]: value });
 
         setEditModal({ isOpen: false, key: '', label: '', value: '' });
         setToast(true);
@@ -237,7 +225,11 @@ export default function Settings() {
                             label="Recent AC Problems and Submission Details" 
                             isActive={profile.recentAC}
                             onToggle={() => {
-                                setProfile(p => ({ ...p, recentAC: !profile.recentAC }));
+                                setProfile(p => {
+                                    const next = !p.recentAC
+                                    updateUser({ recentAC: next })
+                                    return { ...p, recentAC: next }
+                                });
                                 setToast(true);
                                 setTimeout(() => setToast(false), 3000);
                             }}
@@ -247,7 +239,11 @@ export default function Settings() {
                             label="Submission Heatmap" 
                             isActive={profile.heatmap}
                             onToggle={() => {
-                                setProfile(p => ({ ...p, heatmap: !profile.heatmap }));
+                                setProfile(p => {
+                                    const next = !p.heatmap
+                                    updateUser({ heatmap: next })
+                                    return { ...p, heatmap: next }
+                                });
                                 setToast(true);
                                 setTimeout(() => setToast(false), 3000);
                             }}

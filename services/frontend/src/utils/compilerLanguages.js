@@ -3,8 +3,12 @@ const LANGUAGE_CATALOG = {
     python: { key: 'python', label: 'Python', monaco: 'python' },
     java: { key: 'java', label: 'Java', monaco: 'java' },
     javascript: { key: 'javascript', label: 'JavaScript', monaco: 'javascript' },
+    typescript: { key: 'typescript', label: 'TypeScript', monaco: 'typescript' },
     go: { key: 'go', label: 'Go', monaco: 'go' },
     c: { key: 'c', label: 'C', monaco: 'c' },
+    csharp: { key: 'csharp', label: 'C#', monaco: 'csharp' },
+    rust: { key: 'rust', label: 'Rust', monaco: 'rust' },
+    kotlin: { key: 'kotlin', label: 'Kotlin', monaco: 'kotlin' },
     bash: { key: 'bash', label: 'Bash', monaco: 'shell' },
     powershell: { key: 'powershell', label: 'PowerShell', monaco: 'powershell' },
     sql: { key: 'sql', label: 'SQL', monaco: 'sql' },
@@ -13,7 +17,7 @@ const LANGUAGE_CATALOG = {
 }
 
 const DOMAIN_LANGUAGE_KEYS = {
-    DSA: ['cpp', 'python', 'java', 'javascript', 'go'],
+    DSA: ['cpp', 'c', 'python', 'java', 'javascript', 'typescript', 'go', 'csharp', 'rust', 'kotlin'],
     ML: ['python', 'r', 'sql', 'julia'],
     CTF: ['python', 'bash', 'c', 'cpp', 'javascript', 'powershell'],
 }
@@ -41,6 +45,14 @@ public:
         // Write your solution here
     }
 };`
+        case 'c':
+            return `// ${title}
+#include <stdio.h>
+
+int main(void) {
+    // Write your solution here
+    return 0;
+}`
         case 'python':
             return `# ${title}
 class Solution:
@@ -59,10 +71,40 @@ class Solution {
 var solve = function() {
     // Write your solution here
 };`
+        case 'typescript':
+            return `// ${title}
+function solve(): void {
+    // Write your solution here
+}`
         case 'go':
             return `// ${title}
 func solve() {
     // Write your solution here
+}`
+        case 'csharp':
+            return `// ${title}
+using System;
+
+public class Solution {
+    public void Solve() {
+        // Write your solution here
+    }
+}`
+        case 'rust':
+            return `// ${title}
+fn solve() {
+    // Write your solution here
+}
+
+fn main() {
+    solve();
+}`
+        case 'kotlin':
+            return `// ${title}
+class Solution {
+    fun solve() {
+        // Write your solution here
+    }
 }`
         default:
             return `// ${title}

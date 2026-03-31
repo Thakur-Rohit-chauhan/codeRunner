@@ -111,13 +111,13 @@ export default function Login() {
         if (!form.email || !form.password) {
             return toast.error('Please fill in all fields')
         }
-        mockLogin()
+        mockLogin({ email: form.email })
         toast.success('Signed in successfully!')
         navigate('/problems')
     }
 
     const handleGoogle = () => {
-        mockLogin()
+        mockLogin({ email: form.email || 'google.user@coderunner.dev', displayName: 'Google User' })
         toast.success('Signed in with Google')
         navigate('/problems')
     }

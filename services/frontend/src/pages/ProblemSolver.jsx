@@ -4,6 +4,7 @@ import { Panel, Group, Separator } from 'react-resizable-panels'
 import Editor from '@monaco-editor/react'
 import { ArrowLeft, ChevronLeft, ChevronRight, Shuffle, Play, Pause, Square, Upload, Clock, Settings, Check, X, Tag, Code2, FileText, MessageSquare, History, Maximize2, Minimize2, RotateCcw, RotateCw, Terminal, Bookmark, Star, ThumbsUp, MessageCircle, ExternalLink, Lightbulb, ChevronUp, Search, ArrowUpDown, SlidersHorizontal, User, LogOut, Palette, BarChart3, Layout, BookOpen, ChevronDown, Filter, EyeOff, Plus, Minus } from 'lucide-react'
 import useAuthStore from '../store/authStore'
+import useSubmissionStore from '../store/submissionStore'
 import { getProblemDetail, mockProblems } from '../utils/mockData'
 import { buildStarterCodeMap, getDefaultLanguageForDomain, getLanguagesForDomain, getStarterCodeForLanguage, languageLabelMap } from '../utils/compilerLanguages'
 import toast from 'react-hot-toast'
@@ -285,6 +286,7 @@ export default function ProblemSolver() {
     const domainParam = searchParams.get('domain')
 
     const { user, logout } = useAuthStore()
+    const addSubmission = useSubmissionStore((state) => state.addSubmission)
     const problem = useMemo(() => getProblemDetail(id) || getProblemDetail(1), [id])
     const availableLanguages = useMemo(() => getLanguagesForDomain(problem.domain), [problem.domain])
 
@@ -551,8 +553,23 @@ export default function ProblemSolver() {
         setRunning(true)
         setBottomTab('result')
         setTimeout(() => {
-            setTestResult(getMockSubmitResult(problem, lang))
+            const result = getMockSubmitResult(problem, lang)
+            setTestResult(result)
             setRunning(false)
+
+            if (user?.username) {
+                addSubmission(user.username, {
+                    problemId: problem.id,
+                    problemTitle: problem.title,
+                    domain: problem.domain,
+                    status: result.status,
+                    language: languageLabelMap[lang] || lang,
+                    runtime: result.time,
+                    memory: result.memory,
+                    submittedAt: new Date().toISOString(),
+                })
+            }
+
             toast.success(getSubmitToast(problem), {
                 style: { background: 'rgba(30,36,44,0.95)', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' }
             })
