@@ -1,6 +1,7 @@
 import { useState, useMemo, useRef, useEffect } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import { Search, Check, Minus, ChevronLeft, ChevronRight, ArrowUpDown, SlidersHorizontal, BarChart3, Lock, Star, FolderOpen, X, EyeOff, Eye } from 'lucide-react'
+import { Search, Check, Minus, ChevronLeft, ChevronRight, ArrowUpDown, SlidersHorizontal, BarChart3, Lock, Bookmark, FolderOpen, X, EyeOff, Eye } from 'lucide-react'
+import toast from 'react-hot-toast'
 import Navbar from '../components/Navbar/Navbar'
 import { mockProblems } from '../utils/mockData'
 import FilterPopover from '../components/Problems/FilterPopover'
@@ -35,6 +36,7 @@ export default function Problems() {
     const [showTags, setShowTags] = useState(false)
     const [filterOpen, setFilterOpen] = useState(false)
     const [matchStrategy, setMatchStrategy] = useState('All') // 'All', 'Any'
+    const [bookmarkVersion, setBookmarkVersion] = useState(0)
     const [filters, setFilters] = useState([
         { id: Date.now(), enabled: true, property: 'Status', operator: 'is', value: '' }
     ])
@@ -49,7 +51,7 @@ export default function Problems() {
     const domainProblems = useMemo(() => {
         if (!urlDomain) return mockProblems
         return mockProblems.filter(p => p.domain === urlDomain)
-    }, [urlDomain])
+    }, [urlDomain, bookmarkVersion])
 
     const solvedCount = useMemo(() => domainProblems.filter((p) => p.status === 'solved').length, [domainProblems])
     const totalCount = domainProblems.length
@@ -134,10 +136,30 @@ export default function Problems() {
         }
 
         return result
-    }, [domainProblems, search, activeSort, sortDirection, filters, matchStrategy])
+    }, [domainProblems, search, activeSort, sortDirection, filters, matchStrategy, bookmarkVersion])
 
     const totalPages = Math.ceil(filtered.length / perPage)
     const paginated = filtered.slice((page - 1) * perPage, page * perPage)
+
+    const handleToggleBookmark = (event, problemId) => {
+        event.preventDefault()
+        event.stopPropagation()
+
+        const problem = mockProblems.find((item) => item.id === problemId)
+        if (!problem) return
+
+        problem.starred = !problem.starred
+        setBookmarkVersion((value) => value + 1)
+
+        toast.success(problem.starred ? 'Added to bookmarks' : 'Removed from bookmarks', {
+            icon: problem.starred ? '🔖' : '🗑️',
+            style: {
+                background: 'rgba(30,36,44,0.95)',
+                color: '#fff',
+                border: '1px solid rgba(255,255,255,0.1)',
+            },
+        })
+    }
 
     return (
         <div className="min-h-screen" style={{
@@ -404,11 +426,19 @@ export default function Problems() {
                                 <div style={{ cursor: 'pointer', padding: '4px', borderRadius: '6px', transition: 'all 0.2s' }} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(251, 191, 36, 0.1)'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}>
                                     <Lock style={{ width: '16px', height: '16px', color: '#6b7280' }} />
                                 </div>
-                                <div style={{ cursor: 'pointer', padding: '4px', borderRadius: '6px', transition: 'all 0.2s' }} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(251, 191, 36, 0.1)'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}>
-                                    <Star style={{
+                                <div
+                                    role="button"
+                                    aria-label={p.starred ? `Remove ${p.title} from bookmarks` : `Add ${p.title} to bookmarks`}
+                                    title={p.starred ? 'Remove bookmark' : 'Add to bookmarks'}
+                                    style={{ cursor: 'pointer', padding: '4px', borderRadius: '6px', transition: 'all 0.2s' }}
+                                    onClick={(event) => handleToggleBookmark(event, p.id)}
+                                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(52, 211, 153, 0.12)'}
+                                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                                >
+                                    <Bookmark style={{
                                         width: '16px', height: '16px',
-                                        color: p.starred ? '#fbbf24' : '#6b7280',
-                                        fill: p.starred ? '#fbbf24' : 'none',
+                                        color: p.starred ? '#34d399' : '#6b7280',
+                                        fill: p.starred ? 'rgba(52, 211, 153, 0.18)' : 'none',
                                     }} />
                                 </div>
                             </div>

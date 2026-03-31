@@ -72,8 +72,9 @@ export default function Navbar() {
 
     return (
         <nav
-            className="sticky top-0 z-50"
+            className="sticky top-0"
             style={{
+                zIndex: 200,
                 padding: '14px 18px 10px',
                 background: 'linear-gradient(180deg, rgba(11,15,25,0.92) 0%, rgba(11,15,25,0.78) 100%)',
                 borderBottom: '1px solid rgba(255,255,255,0.04)',

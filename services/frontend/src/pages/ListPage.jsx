@@ -1,10 +1,11 @@
 import React, { useState, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import Navbar from '../components/Navbar/Navbar'
-import { Search, Play, Star, Share2, HelpCircle, CheckCircle2, Lock, ArrowLeft, ArrowUpDown, Filter, Check, EyeOff, Plus, Minus, ChevronDown, RefreshCw } from 'lucide-react'
+import { Search, Play, Bookmark, Share2, HelpCircle, CheckCircle2, Lock, ArrowLeft, ArrowUpDown, Filter, Check, EyeOff, Plus, Minus, ChevronDown, RefreshCw } from 'lucide-react'
 import { PieChart, Pie, Cell } from 'recharts'
 import toast, { Toaster } from 'react-hot-toast'
 import { mockProblems } from '../utils/mockData'
+import useAuthStore from '../store/authStore'
 
 // Theme constants
 const COLORS = {
@@ -30,8 +31,8 @@ const glassCard = {
 export default function ListPage() {
     const { listId } = useParams()
     const navigate = useNavigate()
+    const user = useAuthStore((state) => state.user)
     const [searchQuery, setSearchQuery] = useState('')
-    const [isStarred, setIsStarred] = useState(false)
     
     // Sort & Filter state
     const [sortConfig, setSortConfig] = useState({ key: 'custom', direction: 'asc' })
@@ -45,12 +46,13 @@ export default function ListPage() {
     const FILTER_FIELDS = {
         'Status': ['Solved', 'Attempted', 'Unsolved'],
         'Difficulty': ['Easy', 'Medium', 'Hard'],
-        'List': ['Starred', 'Not Starred']
+        'List': ['Bookmarked', 'Not Bookmarked']
     }
     const FILTER_OPERATORS = ['is', 'is not']
 
     // Decode URL param
     const currentListId = decodeURIComponent(listId || 'bookmarks')
+    const isBookmarksList = currentListId === 'bookmarks'
     const listTitle = currentListId === 'bookmarks' ? 'Bookmarked Questions' : currentListId.charAt(0).toUpperCase() + currentListId.slice(1)
 
     // Filter problems that match the list
@@ -108,7 +110,7 @@ export default function ListPage() {
                         } else if (rule.field === 'Difficulty') {
                             fieldVal = p.difficulty
                         } else if (rule.field === 'List') {
-                            fieldVal = p.starred ? 'Starred' : 'Not Starred'
+                            fieldVal = p.starred ? 'Bookmarked' : 'Not Bookmarked'
                         }
 
                         if (rule.operator === 'is') return fieldVal === rule.value
@@ -223,7 +225,7 @@ export default function ListPage() {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                     {/* Header Card */}
                     <div style={{ ...glassCard, padding: '24px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px', cursor: 'pointer', color: COLORS.textMuted, fontSize: '14px', width: 'fit-content' }} onClick={() => navigate('/profile/me')} onMouseEnter={e => e.currentTarget.style.color = COLORS.textMain} onMouseLeave={e => e.currentTarget.style.color = COLORS.textMuted}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px', cursor: 'pointer', color: COLORS.textMuted, fontSize: '14px', width: 'fit-content' }} onClick={() => navigate(user?.username ? `/profile/${user.username}` : '/profile')} onMouseEnter={e => e.currentTarget.style.color = COLORS.textMain} onMouseLeave={e => e.currentTarget.style.color = COLORS.textMuted}>
                             <ArrowLeft style={{ width: '16px', height: '16px' }} />
                             <span>Back to Profile</span>
                         </div>
@@ -254,13 +256,13 @@ export default function ListPage() {
                                 Practice
                             </button>
 
-                            <button onClick={() => setIsStarred(!isStarred)} style={{
+                            <button onClick={() => navigate('/list/bookmarks')} style={{
                                 width: '40px', height: '40px', borderRadius: '50%',
                                 backgroundColor: COLORS.bgHover, border: `1px solid ${COLORS.border}`,
                                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                cursor: 'pointer', color: isStarred ? '#fbbf24' : COLORS.textMain, transition: 'all 0.2s'
+                                cursor: 'pointer', color: isBookmarksList ? '#34d399' : COLORS.textMain, transition: 'all 0.2s'
                             }}>
-                                <Star style={{ width: '18px', height: '18px', fill: isStarred ? '#fbbf24' : 'none' }} />
+                                <Bookmark style={{ width: '18px', height: '18px', fill: isBookmarksList ? 'rgba(52, 211, 153, 0.18)' : 'none' }} />
                             </button>
 
                             <button onClick={handleShare} style={{
@@ -627,10 +629,12 @@ export default function ListPage() {
                                             style={{ 
                                                 background: 'none', border: 'none', cursor: 'pointer', padding: 0, 
                                                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                                color: p.starred ? '#fbbf24' : COLORS.textMuted 
+                                                color: p.starred ? '#34d399' : COLORS.textMuted 
                                             }}
+                                            aria-label={p.starred ? `Remove ${p.title} from bookmarks` : `Add ${p.title} to bookmarks`}
+                                            title={p.starred ? 'Remove bookmark' : 'Add to bookmarks'}
                                         >
-                                            <Star style={{ width: '16px', height: '16px', fill: p.starred ? '#fbbf24' : 'none', transition: 'all 0.2s' }} />
+                                            <Bookmark style={{ width: '16px', height: '16px', fill: p.starred ? 'rgba(52, 211, 153, 0.18)' : 'none', transition: 'all 0.2s' }} />
                                         </button>
                                     </div>
 

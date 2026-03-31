@@ -1,10 +1,12 @@
 import { useState, useMemo, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { MapPin, Github, Linkedin, Edit, Eye, MessageSquare, ThumbsUp, Award, Flame, Calendar, Clock, FileText, CheckSquare, Star, Briefcase, GraduationCap, Twitter, Link2, Gift } from 'lucide-react'
+import { MapPin, Github, Linkedin, Edit, Eye, MessageSquare, ThumbsUp, Award, Flame, Calendar, Clock, FileText, CheckSquare, Star, Briefcase, GraduationCap, Twitter, Link2, Gift, X } from 'lucide-react'
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
 import Navbar from '../components/Navbar/Navbar'
 import useAuthStore from '../store/authStore'
-import { mockContestRatingHistory, mockRecentSubmissions, mockProblems, generateHeatmapData } from '../utils/mockData'
+import useContestStore from '../store/contestStore'
+import useSocialStore, { computeFollowStats } from '../store/socialStore'
+import { mockRecentSubmissions, mockProblems, generateHeatmapData } from '../utils/mockData'
 
 /* ── shared glassmorphism card style ── */
 const glassCard = {
@@ -18,6 +20,28 @@ const glassCard = {
 const glassCardHover = {
     ...glassCard,
     transition: 'all 0.3s ease',
+}
+
+function formatRelativeTime(isoString) {
+    if (!isoString) return 'Not submitted'
+
+    const diffMs = Date.now() - new Date(isoString).getTime()
+    const minutes = Math.floor(diffMs / (1000 * 60))
+
+    if (minutes < 1) return 'just now'
+    if (minutes < 60) return `${minutes} minute${minutes === 1 ? '' : 's'} ago`
+
+    const hours = Math.floor(minutes / 60)
+    if (hours < 24) return `${hours} hour${hours === 1 ? '' : 's'} ago`
+
+    const days = Math.floor(hours / 24)
+    if (days < 30) return `${days} day${days === 1 ? '' : 's'} ago`
+
+    const months = Math.floor(days / 30)
+    if (months < 12) return `${months} month${months === 1 ? '' : 's'} ago`
+
+    const years = Math.floor(months / 12)
+    return `${years} year${years === 1 ? '' : 's'} ago`
 }
 
 /* ── Heatmap ── */
@@ -160,24 +184,20 @@ function ActivityHeatmap({ data }) {
 }
 
 /* ── Donut — LeetCode style ── */
-function SolvedDonut({ easy, medium, hard, total, solved }) {
+function SolvedDonut({ difficultyStats, totalProblems, totalSolved }) {
     const data = [
-        { name: 'Easy', value: easy, color: '#34d399' },
-        { name: 'Medium', value: medium, color: '#fbbf24' },
-        { name: 'Hard', value: hard, color: '#f87171' },
+        { name: 'Easy', color: '#34d399', solved: difficultyStats.Easy?.solved || 0, total: difficultyStats.Easy?.total || 0 },
+        { name: 'Medium', color: '#fbbf24', solved: difficultyStats.Medium?.solved || 0, total: difficultyStats.Medium?.total || 0 },
+        { name: 'Hard', color: '#f87171', solved: difficultyStats.Hard?.solved || 0, total: difficultyStats.Hard?.total || 0 },
     ]
-    const totalsByDiff = {
-        Easy: { solved: easy, total: 934 },
-        Medium: { solved: medium, total: 2032 },
-        Hard: { solved: hard, total: 917 },
-    }
+
     return (
         <div style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
             {/* Donut */}
             <div style={{ position: 'relative', width: '140px', height: '140px', flexShrink: 0 }}>
                 <ResponsiveContainer>
                     <PieChart>
-                        <Pie data={data} cx="50%" cy="50%" innerRadius={44} outerRadius={62} paddingAngle={3} dataKey="value" stroke="none">
+                        <Pie data={data} cx="50%" cy="50%" innerRadius={44} outerRadius={62} paddingAngle={3} dataKey="solved" stroke="none">
                             {data.map((entry) => <Cell key={entry.name} fill={entry.color} />)}
                         </Pie>
                     </PieChart>
@@ -187,17 +207,16 @@ function SolvedDonut({ easy, medium, hard, total, solved }) {
                     display: 'flex', flexDirection: 'column',
                     alignItems: 'center', justifyContent: 'center',
                 }}>
-                    <span style={{ fontSize: '24px', fontWeight: 700, color: '#fff' }}>{solved}</span>
-                    <span style={{ fontSize: '11px', color: '#6b7280', fontWeight: 500 }}>/{total}</span>
+                    <span style={{ fontSize: '24px', fontWeight: 700, color: '#fff' }}>{totalSolved}</span>
+                    <span style={{ fontSize: '11px', color: '#6b7280', fontWeight: 500 }}>/{totalProblems}</span>
                     <span style={{ fontSize: '10px', color: '#6b7280', marginTop: '2px' }}>Solved</span>
                 </div>
             </div>
 
             {/* Difficulty breakdown — LeetCode style */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', flex: 1 }}>
-                {data.map(({ name, color }) => {
-                    const { solved: s, total: t } = totalsByDiff[name]
-                    const pct = (s / t) * 100
+                {data.map(({ name, color, solved, total }) => {
+                    const pct = total > 0 ? (solved / total) * 100 : 0
                     return (
                         <div key={name}>
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
@@ -207,7 +226,7 @@ function SolvedDonut({ easy, medium, hard, total, solved }) {
                                     backgroundColor: `${color}15`,
                                 }}>{name}</span>
                                 <span style={{ fontSize: '13px', fontWeight: 600, color: '#e5e7eb' }}>
-                                    {s}<span style={{ color: '#6b7280', fontWeight: 400 }}>/{t}</span>
+                                    {solved}<span style={{ color: '#6b7280', fontWeight: 400 }}>/{total}</span>
                                 </span>
                             </div>
                             {/* Progress bar */}
@@ -234,6 +253,8 @@ function SolvedDonut({ easy, medium, hard, total, solved }) {
 /* ─── Public Profile Stub ─── */
 function PublicProfile({ username }) {
     const navigate = useNavigate()
+    const currentUser = useAuthStore((state) => state.user)
+    const { profiles, followingByUser, syncProfile, followProfile, unfollowProfile } = useSocialStore()
     // Generate deterministic stats from the username string
     const seed = username.split('').reduce((a, c) => a + c.charCodeAt(0), 0)
     const rating   = 1200 + (seed % 1400)
@@ -249,6 +270,26 @@ function PublicProfile({ username }) {
         'linear-gradient(135deg,#f87171,#dc2626)',
     ]
     const gradient = gradients[seed % gradients.length]
+    const followStats = useMemo(
+        () => computeFollowStats(username, profiles, followingByUser),
+        [username, profiles, followingByUser]
+    )
+    const isFollowingProfile = !!currentUser?.username && (followingByUser[currentUser.username] || []).includes(username)
+
+    useEffect(() => {
+        syncProfile(username)
+    }, [syncProfile, username])
+
+    useEffect(() => {
+        if (!currentUser?.username) return
+
+        syncProfile(currentUser.username, {
+            displayName: currentUser.displayName,
+            avatar: currentUser.avatar || null,
+            followersBase: currentUser.followers || 0,
+            followingBase: currentUser.following || 0,
+        })
+    }, [currentUser?.avatar, currentUser?.displayName, currentUser?.followers, currentUser?.following, currentUser?.username, syncProfile])
 
     return (
         <div style={{ minHeight: '100vh', background: 'linear-gradient(135deg,#0b0f19,#161b22)', color: '#e5e7eb', fontFamily: '"Inter","Roboto",sans-serif' }}>
@@ -268,6 +309,82 @@ function PublicProfile({ username }) {
                         <Award style={{ width: '13px', height: '13px', color: '#fbbf24' }} />
                         <span style={{ fontSize: '12px', fontWeight: 600, color: '#fbbf24' }}>Coder</span>
                     </div>
+                    <div style={{
+                        display: 'flex',
+                        justifyContent: 'center',
+                        gap: '14px',
+                        marginTop: '18px',
+                        flexWrap: 'wrap',
+                    }}>
+                        {[
+                            { label: 'Followers', value: followStats.followers, tab: 'followers' },
+                            { label: 'Following', value: followStats.following, tab: 'following' },
+                        ].map((item) => (
+                            <button
+                                key={item.label}
+                                onClick={() => navigate(`/profile/${username}/connections?tab=${item.tab}`)}
+                                style={{
+                                    border: 'none',
+                                    background: 'rgba(255,255,255,0.04)',
+                                    borderRadius: '12px',
+                                    padding: '10px 14px',
+                                    cursor: 'pointer',
+                                    color: '#d1d5db',
+                                    fontFamily: 'inherit',
+                                    transition: 'all 0.2s ease',
+                                }}
+                                onMouseEnter={(e) => {
+                                    e.currentTarget.style.background = 'rgba(255,255,255,0.08)'
+                                }}
+                                onMouseLeave={(e) => {
+                                    e.currentTarget.style.background = 'rgba(255,255,255,0.04)'
+                                }}
+                            >
+                                <span style={{ fontWeight: 700, color: '#fff', fontSize: '15px' }}>{item.value.toLocaleString()}</span>
+                                <span style={{ color: '#6b7280', fontSize: '13px', marginLeft: '4px' }}>{item.label}</span>
+                            </button>
+                        ))}
+                    </div>
+                    {currentUser?.username && (
+                        <button
+                            onClick={() => {
+                                if (isFollowingProfile) {
+                                    unfollowProfile(currentUser.username, username)
+                                } else {
+                                    followProfile(currentUser.username, username)
+                                }
+                            }}
+                            style={{
+                                marginTop: '18px',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                padding: '10px 18px',
+                                borderRadius: '12px',
+                                background: isFollowingProfile
+                                    ? 'rgba(255,255,255,0.05)'
+                                    : 'linear-gradient(135deg, rgba(52,211,153,0.2), rgba(59,130,246,0.16))',
+                                border: `1px solid ${isFollowingProfile ? 'rgba(255,255,255,0.08)' : 'rgba(52,211,153,0.24)'}`,
+                                color: isFollowingProfile ? '#d1d5db' : '#34d399',
+                                fontSize: '13.5px',
+                                fontWeight: 600,
+                                cursor: 'pointer',
+                                transition: 'all 0.2s ease',
+                            }}
+                            onMouseEnter={(e) => {
+                                e.currentTarget.style.transform = 'translateY(-1px)'
+                                e.currentTarget.style.boxShadow = isFollowingProfile
+                                    ? '0 8px 20px rgba(255,255,255,0.05)'
+                                    : '0 10px 24px rgba(52,211,153,0.12)'
+                            }}
+                            onMouseLeave={(e) => {
+                                e.currentTarget.style.transform = 'translateY(0)'
+                                e.currentTarget.style.boxShadow = 'none'
+                            }}
+                        >
+                            {isFollowingProfile ? 'Following' : 'Follow'}
+                        </button>
+                    )}
                 </div>
 
                 {/* Stats Grid */}
@@ -297,9 +414,12 @@ function PublicProfile({ username }) {
 /* ─── Profile Page ─── */
 export default function Profile() {
     const { user } = useAuthStore()
+    const contests = useContestStore((state) => state.contests)
+    const { profiles, followingByUser, syncProfile } = useSocialStore()
     const { username } = useParams()
     const navigate = useNavigate()
     const [activeTab, setActiveTab] = useState('recent')
+    const [isSubmissionPanelOpen, setIsSubmissionPanelOpen] = useState(false)
     const [profileData, setProfileData] = useState(user)
 
     useEffect(() => {
@@ -311,20 +431,33 @@ export default function Profile() {
         }
     }, [user])
 
+    useEffect(() => {
+        if (!user?.username) return
+
+        syncProfile(user.username, {
+            displayName: profileData?.displayName || user.displayName,
+            avatar: profileData?.avatar || user.avatar || null,
+            followersBase: user.followers || 0,
+            followingBase: user.following || 0,
+        })
+    }, [
+        profileData?.avatar,
+        profileData?.displayName,
+        syncProfile,
+        user?.avatar,
+        user?.displayName,
+        user?.followers,
+        user?.following,
+        user?.username,
+    ])
+
     // If visiting another user's profile, show public view
     const isOwnProfile = !username || username === user?.username
     if (!isOwnProfile) return <PublicProfile username={username} />
 
     if (!profileData || !user) return null
 
-    const badges = [
-        { name: '100 Day Streak', emoji: '🔥', earned: true },
-        { name: 'Contest Winner', emoji: '🏆', earned: true },
-        { name: 'Top Contributor', emoji: '⭐', earned: true },
-        { name: 'Bug Hunter', emoji: '🐛', earned: false },
-        { name: 'ML Master', emoji: '🧠', earned: false },
-        { name: 'CTF Champion', emoji: '🛡️', earned: false },
-    ]
+    const ownFollowStats = computeFollowStats(user.username, profiles, followingByUser)
 
     const customSkillsArray = profileData.skills ? profileData.skills.split(',').map(s => s.trim()).filter(Boolean) : []
     const dynamicSkills = useMemo(() => {
@@ -359,6 +492,48 @@ export default function Profile() {
     // Generate heatmap data dynamically from real problem submissions
     const heatmapData = useMemo(() => generateHeatmapData(mockProblems), [mockProblems])
 
+    const problemSummary = useMemo(() => {
+        const difficulties = {
+            Easy: { total: 0, solved: 0 },
+            Medium: { total: 0, solved: 0 },
+            Hard: { total: 0, solved: 0 },
+        }
+        const domains = {}
+        let solved = 0
+        let attempted = 0
+
+        mockProblems.forEach((problem) => {
+            if (!difficulties[problem.difficulty]) {
+                difficulties[problem.difficulty] = { total: 0, solved: 0 }
+            }
+            difficulties[problem.difficulty].total += 1
+
+            if (!domains[problem.domain]) {
+                domains[problem.domain] = { total: 0, solved: 0, attempted: 0 }
+            }
+            domains[problem.domain].total += 1
+
+            if (problem.status === 'solved') {
+                solved += 1
+                difficulties[problem.difficulty].solved += 1
+                domains[problem.domain].solved += 1
+            }
+
+            if (problem.status === 'attempted') {
+                attempted += 1
+                domains[problem.domain].attempted += 1
+            }
+        })
+
+        return {
+            total: mockProblems.length,
+            solved,
+            attempted,
+            difficulties,
+            domains,
+        }
+    }, [])
+
     const activeDays = heatmapData.filter(d => d.count > 0).length
     const totalSubmissions = heatmapData.reduce((acc, d) => acc + d.count, 0)
 
@@ -377,6 +552,95 @@ export default function Profile() {
         return best
     }, [heatmapData])
 
+    const contestInsights = useMemo(() => {
+        const participatedContests = [...contests]
+            .filter((contest) => contest.status === 'past' && contest.results && (contest.results.userRank || contest.results.userScore || contest.results.userAccuracy))
+            .sort((a, b) => new Date(a.startTime) - new Date(b.startTime))
+
+        const summarizeContests = (items) => {
+            if (items.length === 0) {
+                return {
+                    rating: 1200,
+                    globalRanking: 0,
+                    totalPopulation: 0,
+                    attended: 0,
+                    topPercent: 0,
+                }
+            }
+
+            const performance = items.map((contest) => {
+                const totalParticipants = Math.max(contest.participants || 0, contest.leaderboard?.length || 0, 1)
+                const userRank = Math.min(contest.results?.userRank || totalParticipants, totalParticipants)
+                const percentile = totalParticipants > 1
+                    ? 1 - ((userRank - 1) / (totalParticipants - 1))
+                    : 1
+
+                let metricScore = 0
+                if ((contest.ranking || 'score') === 'accuracy') {
+                    metricScore = Math.round((contest.results?.userAccuracy || 0) * 100)
+                } else {
+                    const topScore = Math.max(contest.leaderboard?.[0]?.score || 0, contest.results?.userScore || 0, 1)
+                    metricScore = Math.round(((contest.results?.userScore || 0) / topScore) * 100)
+                }
+
+                return {
+                    contest,
+                    totalParticipants,
+                    percentile,
+                    metricScore,
+                }
+            })
+
+            const avgPercentile = performance.reduce((sum, item) => sum + item.percentile, 0) / performance.length
+            const avgMetricScore = performance.reduce((sum, item) => sum + item.metricScore, 0) / performance.length
+            const totalPopulation = performance.reduce((sum, item) => sum + item.totalParticipants, 0)
+            const rating = Math.round(700 + avgPercentile * 1000 + items.length * 15 + avgMetricScore)
+            const globalRanking = Math.max(1, Math.round((1 - avgPercentile) * totalPopulation))
+            const topPercent = Number(((globalRanking / Math.max(totalPopulation, 1)) * 100).toFixed(1))
+
+            return {
+                rating,
+                globalRanking,
+                totalPopulation,
+                attended: items.length,
+                topPercent,
+            }
+        }
+
+        const summary = summarizeContests(participatedContests)
+        const history = participatedContests.map((contest, index) => {
+            const snapshot = summarizeContests(participatedContests.slice(0, index + 1))
+            return {
+                date: new Date(contest.startTime).toLocaleDateString('en-US', { month: 'short' }),
+                rating: snapshot.rating,
+                title: contest.title,
+                rank: contest.results?.userRank || null,
+            }
+        })
+
+        return {
+            ...summary,
+            history: history.length > 0 ? history : [{ date: 'Start', rating: summary.rating, title: 'No contests yet', rank: null }],
+        }
+    }, [contests])
+
+    const badges = useMemo(() => {
+        const solvedHardProblems = problemSummary.difficulties.Hard?.solved || 0
+        const solvedMlProblems = problemSummary.domains.ML?.solved || 0
+        const solvedCtfProblems = problemSummary.domains.CTF?.solved || 0
+        const currentLongestStreak = Math.max(user.streak || 0, maxStreak)
+        const contributionCount = (user.solutions || 0) + (user.discussions || 0)
+
+        return [
+            { name: '100 Day Streak', emoji: '🔥', earned: currentLongestStreak >= 100 },
+            { name: 'Contest Winner', emoji: '🏆', earned: contestInsights.attended >= 3 && contestInsights.rating >= 1750 },
+            { name: 'Top Contributor', emoji: '⭐', earned: (user.reputation || 0) >= 400 && contributionCount >= 40 },
+            { name: 'Bug Hunter', emoji: '🐛', earned: solvedHardProblems >= 2 },
+            { name: 'ML Master', emoji: '🧠', earned: solvedMlProblems >= 2 },
+            { name: 'CTF Champion', emoji: '🛡️', earned: solvedCtfProblems >= 2 },
+        ]
+    }, [contestInsights, maxStreak, problemSummary, user])
+
     const languageStats = useMemo(() => {
         const counts = {}
         mockRecentSubmissions.forEach(sub => {
@@ -388,6 +652,96 @@ export default function Profile() {
             .map(([name, count]) => ({ name, count }))
             .sort((a, b) => b.count - a.count)
     }, [])
+
+    const problemLookup = useMemo(
+        () => new Map(mockProblems.map((problem) => [problem.title, problem])),
+        []
+    )
+
+    const recentSubmissionRows = useMemo(() => (
+        mockRecentSubmissions.map((submission) => {
+            const linkedProblem = problemLookup.get(submission.problem)
+
+            return {
+                id: `recent-${submission.id}`,
+                title: submission.problem,
+                subtitle: `${submission.language} • ${submission.status}${submission.runtime && submission.runtime !== '—' ? ` • ${submission.runtime}` : ''}`,
+                time: submission.time,
+                dotColor: submission.status === 'Accepted' ? '#34d399' : '#f87171',
+                href: linkedProblem ? `/problems/${linkedProblem.id}` : null,
+            }
+        })
+    ), [problemLookup])
+
+    const bookmarkedRows = useMemo(() => (
+        mockProblems
+            .filter((problem) => problem.starred)
+            .sort((a, b) => {
+                if (!a.lastSubmitted && !b.lastSubmitted) return a.id - b.id
+                if (!a.lastSubmitted) return 1
+                if (!b.lastSubmitted) return -1
+                return new Date(b.lastSubmitted) - new Date(a.lastSubmitted)
+            })
+            .map((problem) => ({
+                id: `bookmark-${problem.id}`,
+                title: `${problem.id}. ${problem.title}`,
+                subtitle: `${problem.domain} • ${problem.difficulty} • ${problem.acceptance} acceptance`,
+                time: problem.lastSubmitted ? formatRelativeTime(problem.lastSubmitted) : 'Bookmarked',
+                dotColor: '#60a5fa',
+                href: `/problems/${problem.id}`,
+            }))
+    ), [])
+
+    const solutionRows = useMemo(() => (
+        mockProblems
+            .filter((problem) => problem.status === 'solved')
+            .sort((a, b) => {
+                if (!a.lastSubmitted && !b.lastSubmitted) return a.id - b.id
+                if (!a.lastSubmitted) return 1
+                if (!b.lastSubmitted) return -1
+                return new Date(b.lastSubmitted) - new Date(a.lastSubmitted)
+            })
+            .map((problem) => ({
+                id: `solution-${problem.id}`,
+                title: `${problem.id}. ${problem.title}`,
+                subtitle: `${problem.domain} • ${problem.difficulty} • ${problem.acceptance} acceptance`,
+                time: problem.lastSubmitted ? formatRelativeTime(problem.lastSubmitted) : 'Solved',
+                dotColor: '#34d399',
+                href: `/problems/${problem.id}`,
+            }))
+    ), [])
+
+    const tabContent = useMemo(() => ({
+        recent: {
+            heading: 'Recent submissions',
+            noun: 'submission',
+            emptyMessage: 'No recent submissions yet.',
+            rows: recentSubmissionRows,
+        },
+        list: {
+            heading: 'Bookmarked questions',
+            noun: 'bookmark',
+            emptyMessage: 'No bookmarked questions yet.',
+            rows: bookmarkedRows,
+        },
+        solutions: {
+            heading: 'Solved questions',
+            noun: 'solution',
+            emptyMessage: 'No solved questions yet.',
+            rows: solutionRows,
+        },
+    }), [recentSubmissionRows, bookmarkedRows, solutionRows])
+
+    const currentTabContent = tabContent[activeTab] || tabContent.recent
+    const previewRows = currentTabContent.rows.slice(0, 5)
+    const totalRows = currentTabContent.rows.length
+    const actionLabel = `View all ${totalRows} ${currentTabContent.noun}${totalRows === 1 ? '' : 's'} →`
+
+    const handleRowNavigation = (href) => {
+        if (!href) return
+        setIsSubmissionPanelOpen(false)
+        navigate(href)
+    }
 
     return (
         <div style={{
@@ -445,17 +799,40 @@ export default function Profile() {
 
                             {/* Followers / Following */}
                             <div style={{
-                                display: 'flex', justifyContent: 'center', gap: '24px',
+                                display: 'flex',
+                                justifyContent: 'center',
+                                gap: '12px',
                                 marginBottom: '16px',
+                                flexWrap: 'wrap',
                             }}>
-                                <div>
-                                    <span style={{ fontWeight: 600, color: '#fff', fontSize: '15px' }}>{user.followers}</span>
-                                    <span style={{ color: '#6b7280', fontSize: '13px', marginLeft: '4px' }}>Followers</span>
-                                </div>
-                                <div>
-                                    <span style={{ fontWeight: 600, color: '#fff', fontSize: '15px' }}>{user.following}</span>
-                                    <span style={{ color: '#6b7280', fontSize: '13px', marginLeft: '4px' }}>Following</span>
-                                </div>
+                                {[
+                                    { label: 'Followers', value: ownFollowStats.followers, tab: 'followers' },
+                                    { label: 'Following', value: ownFollowStats.following, tab: 'following' },
+                                ].map((item) => (
+                                    <button
+                                        key={item.label}
+                                        onClick={() => navigate(`/profile/${user.username}/connections?tab=${item.tab}`)}
+                                        style={{
+                                            border: 'none',
+                                            background: 'rgba(255,255,255,0.04)',
+                                            borderRadius: '12px',
+                                            padding: '10px 14px',
+                                            cursor: 'pointer',
+                                            color: '#d1d5db',
+                                            fontFamily: 'inherit',
+                                            transition: 'all 0.2s ease',
+                                        }}
+                                        onMouseEnter={(e) => {
+                                            e.currentTarget.style.background = 'rgba(255,255,255,0.08)'
+                                        }}
+                                        onMouseLeave={(e) => {
+                                            e.currentTarget.style.background = 'rgba(255,255,255,0.04)'
+                                        }}
+                                    >
+                                        <span style={{ fontWeight: 600, color: '#fff', fontSize: '15px' }}>{item.value.toLocaleString()}</span>
+                                        <span style={{ color: '#6b7280', fontSize: '13px', marginLeft: '4px' }}>{item.label}</span>
+                                    </button>
+                                ))}
                             </div>
 
                             {/* Edit Profile button */}
@@ -645,23 +1022,25 @@ export default function Profile() {
                                 <div style={{ display: 'flex', gap: '32px', marginBottom: '20px' }}>
                                     <div>
                                         <p style={{ fontSize: '11px', color: '#6b7280', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '4px' }}>Contest Rating</p>
-                                        <p style={{ fontSize: '28px', fontWeight: 800, color: '#fff' }}>{user.rating.toLocaleString()}</p>
+                                        <p style={{ fontSize: '28px', fontWeight: 800, color: '#fff' }}>{contestInsights.rating.toLocaleString()}</p>
                                     </div>
                                     <div>
                                         <p style={{ fontSize: '11px', color: '#6b7280', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '4px' }}>Global Ranking</p>
                                         <p style={{ fontSize: '18px', fontWeight: 600, color: '#d1d5db' }}>
-                                            {user.globalRanking.toLocaleString()}<span style={{ color: '#6b7280', fontSize: '13px' }}>/858,485</span>
+                                            {contestInsights.globalRanking.toLocaleString()}<span style={{ color: '#6b7280', fontSize: '13px' }}>/{
+                                                contestInsights.totalPopulation.toLocaleString()
+                                            }</span>
                                         </p>
                                     </div>
                                     <div>
                                         <p style={{ fontSize: '11px', color: '#6b7280', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '4px' }}>Attended</p>
-                                        <p style={{ fontSize: '18px', fontWeight: 600, color: '#d1d5db' }}>{user.contests}</p>
+                                        <p style={{ fontSize: '18px', fontWeight: 600, color: '#d1d5db' }}>{contestInsights.attended}</p>
                                     </div>
                                 </div>
 
                                 {/* Mini Contest Chart */}
                                 <ResponsiveContainer width="100%" height={80}>
-                                    <LineChart data={mockContestRatingHistory}>
+                                    <LineChart data={contestInsights.history}>
                                         <Line type="monotone" dataKey="rating" stroke="#34d399" strokeWidth={2} dot={false} />
                                         <Tooltip
                                             contentStyle={{
@@ -684,7 +1063,7 @@ export default function Profile() {
                                     WebkitBackgroundClip: 'text',
                                     WebkitTextFillColor: 'transparent',
                                     lineHeight: 1.1,
-                                }}>{user.topPercent}%</p>
+                                }}>{contestInsights.topPercent}%</p>
                             </div>
                         </div>
 
@@ -692,7 +1071,11 @@ export default function Profile() {
                         <div style={{ display: 'flex', gap: '16px' }}>
                             {/* Donut */}
                             <div style={{ ...glassCard, padding: '24px', flex: 1 }}>
-                                <SolvedDonut easy={user.easy} medium={user.medium} hard={user.hard} total={user.totalProblems} solved={user.solvedProblems} />
+                                <SolvedDonut
+                                    difficultyStats={problemSummary.difficulties}
+                                    totalProblems={problemSummary.total}
+                                    totalSolved={problemSummary.solved}
+                                />
                             </div>
 
                             {/* Badges */}
@@ -821,29 +1204,42 @@ export default function Profile() {
                                         </button>
                                     ))}
                                     <div style={{ flex: 1 }} />
-                                    <span style={{
-                                        fontSize: '12.5px', color: '#6b7280', cursor: 'pointer',
-                                        transition: 'color 0.2s',
-                                    }}
-                                        onMouseEnter={(e) => e.currentTarget.style.color = '#d1d5db'}
-                                        onMouseLeave={(e) => e.currentTarget.style.color = '#6b7280'}
+                                    <button
+                                        onClick={() => setIsSubmissionPanelOpen(true)}
+                                        disabled={totalRows === 0}
+                                        style={{
+                                            fontSize: '12.5px',
+                                            color: totalRows === 0 ? 'rgba(107,114,128,0.45)' : '#6b7280',
+                                            cursor: totalRows === 0 ? 'default' : 'pointer',
+                                            transition: 'color 0.2s',
+                                            background: 'none',
+                                            border: 'none',
+                                            fontFamily: 'inherit',
+                                            padding: 0,
+                                        }}
+                                        onMouseEnter={(e) => {
+                                            if (totalRows > 0) e.currentTarget.style.color = '#d1d5db'
+                                        }}
+                                        onMouseLeave={(e) => {
+                                            if (totalRows > 0) e.currentTarget.style.color = '#6b7280'
+                                        }}
                                     >
-                                        View all submissions &rarr;
-                                    </span>
+                                        {actionLabel}
+                                    </button>
                                 </div>
 
                                 {/* Submission rows */}
                                 <div>
-                                    {mockRecentSubmissions.map((s, i) => (
+                                    {previewRows.length > 0 ? previewRows.map((row, i) => (
                                         <div
-                                            key={s.id}
+                                            key={row.id}
                                             style={{
                                                 display: 'flex', alignItems: 'center',
                                                 justifyContent: 'space-between',
                                                 padding: '14px 24px',
                                                 backgroundColor: i % 2 === 0 ? 'rgba(255,255,255,0.015)' : 'transparent',
-                                                borderBottom: i !== mockRecentSubmissions.length - 1 ? '1px solid rgba(255,255,255,0.03)' : 'none',
-                                                cursor: 'pointer', transition: 'all 0.2s',
+                                                borderBottom: i !== previewRows.length - 1 ? '1px solid rgba(255,255,255,0.03)' : 'none',
+                                                cursor: row.href ? 'pointer' : 'default', transition: 'all 0.2s',
                                             }}
                                             onMouseEnter={(e) => {
                                                 e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.04)'
@@ -851,25 +1247,152 @@ export default function Profile() {
                                             onMouseLeave={(e) => {
                                                 e.currentTarget.style.backgroundColor = i % 2 === 0 ? 'rgba(255,255,255,0.015)' : 'transparent'
                                             }}
+                                            onClick={() => handleRowNavigation(row.href)}
                                         >
                                             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                                                 <span style={{
                                                     width: '6px', height: '6px', borderRadius: '50%',
-                                                    backgroundColor: s.status === 'Accepted' ? '#34d399' : '#f87171',
+                                                    backgroundColor: row.dotColor,
                                                 }} />
                                                 <span style={{
                                                     fontSize: '14px', fontWeight: 500, color: '#e5e7eb',
-                                                }}>{s.problem}</span>
+                                                }}>{row.title}</span>
                                             </div>
-                                            <span style={{ fontSize: '13px', color: '#6b7280' }}>{s.time}</span>
+                                            <span style={{ fontSize: '13px', color: '#6b7280' }}>{row.time}</span>
                                         </div>
-                                    ))}
+                                    )) : (
+                                        <div style={{ padding: '20px 24px', color: '#6b7280', fontSize: '13.5px' }}>
+                                            {currentTabContent.emptyMessage}
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         )}
                     </div>
                 </div>
             </div>
+
+            {isSubmissionPanelOpen && (
+                <div style={{
+                    position: 'fixed',
+                    inset: 0,
+                    zIndex: 1200,
+                    background: 'rgba(4, 8, 16, 0.72)',
+                    backdropFilter: 'blur(8px)',
+                    WebkitBackdropFilter: 'blur(8px)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: '24px',
+                }}>
+                    <div style={{
+                        width: 'min(860px, 100%)',
+                        maxHeight: 'min(80vh, 760px)',
+                        overflow: 'hidden',
+                        borderRadius: '24px',
+                        background: 'linear-gradient(180deg, rgba(20,24,32,0.96) 0%, rgba(12,16,24,0.98) 100%)',
+                        border: '1px solid rgba(255,255,255,0.08)',
+                        boxShadow: '0 32px 80px rgba(0,0,0,0.45)',
+                        display: 'flex',
+                        flexDirection: 'column',
+                    }}>
+                        <div style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            padding: '20px 24px',
+                            borderBottom: '1px solid rgba(255,255,255,0.06)',
+                        }}>
+                            <div>
+                                <h3 style={{ fontSize: '18px', fontWeight: 700, color: '#f8fafc', marginBottom: '4px' }}>
+                                    {currentTabContent.heading}
+                                </h3>
+                                <p style={{ fontSize: '13px', color: '#6b7280' }}>
+                                    {totalRows} {currentTabContent.noun}{totalRows === 1 ? '' : 's'}
+                                </p>
+                            </div>
+                            <button
+                                onClick={() => setIsSubmissionPanelOpen(false)}
+                                style={{
+                                    width: '38px',
+                                    height: '38px',
+                                    borderRadius: '12px',
+                                    background: 'rgba(255,255,255,0.03)',
+                                    border: '1px solid rgba(255,255,255,0.06)',
+                                    color: '#9ca3af',
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    transition: 'all 0.2s',
+                                }}
+                                onMouseEnter={(e) => {
+                                    e.currentTarget.style.background = 'rgba(255,255,255,0.06)'
+                                    e.currentTarget.style.color = '#fff'
+                                }}
+                                onMouseLeave={(e) => {
+                                    e.currentTarget.style.background = 'rgba(255,255,255,0.03)'
+                                    e.currentTarget.style.color = '#9ca3af'
+                                }}
+                            >
+                                <X style={{ width: '18px', height: '18px' }} />
+                            </button>
+                        </div>
+
+                        <div style={{ overflowY: 'auto' }}>
+                            {currentTabContent.rows.length > 0 ? currentTabContent.rows.map((row, index) => (
+                                <div
+                                    key={row.id}
+                                    onClick={() => handleRowNavigation(row.href)}
+                                    style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'space-between',
+                                        gap: '16px',
+                                        padding: '18px 24px',
+                                        backgroundColor: index % 2 === 0 ? 'rgba(255,255,255,0.015)' : 'transparent',
+                                        borderBottom: index !== currentTabContent.rows.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none',
+                                        cursor: row.href ? 'pointer' : 'default',
+                                        transition: 'all 0.2s',
+                                    }}
+                                    onMouseEnter={(e) => {
+                                        e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.04)'
+                                    }}
+                                    onMouseLeave={(e) => {
+                                        e.currentTarget.style.backgroundColor = index % 2 === 0 ? 'rgba(255,255,255,0.015)' : 'transparent'
+                                    }}
+                                >
+                                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', minWidth: 0 }}>
+                                        <span style={{
+                                            width: '8px',
+                                            height: '8px',
+                                            borderRadius: '50%',
+                                            marginTop: '6px',
+                                            flexShrink: 0,
+                                            backgroundColor: row.dotColor,
+                                        }} />
+                                        <div style={{ minWidth: 0 }}>
+                                            <div style={{ fontSize: '14px', fontWeight: 600, color: '#e5e7eb', marginBottom: '4px' }}>
+                                                {row.title}
+                                            </div>
+                                            <div style={{ fontSize: '12.5px', color: '#6b7280', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                {row.subtitle}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div style={{ fontSize: '12.5px', color: '#94a3b8', flexShrink: 0 }}>
+                                        {row.time}
+                                    </div>
+                                </div>
+                            )) : (
+                                <div style={{ padding: '24px', color: '#6b7280', fontSize: '13.5px' }}>
+                                    {currentTabContent.emptyMessage}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     )
 }

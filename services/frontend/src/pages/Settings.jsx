@@ -168,7 +168,7 @@ export default function Settings() {
                 
                 {/* BACK BUTTON */}
                 <button
-                    onClick={() => navigate('/problems')}
+                    onClick={() => navigate(user?.username ? `/profile/${user.username}` : '/profile')}
                     style={{
                         display: 'flex', alignItems: 'center', gap: '8px', color: '#9ca3af',
                         backgroundColor: 'transparent', border: 'none', cursor: 'pointer',
@@ -178,7 +178,7 @@ export default function Settings() {
                     onMouseEnter={(e) => e.currentTarget.style.color = '#fff'}
                     onMouseLeave={(e) => e.currentTarget.style.color = '#9ca3af'}
                 >
-                    <ArrowLeft size={16} /> Back to Problems
+                    <ArrowLeft size={16} /> Back to Profile
                 </button>
 
                 {/* HIDDEN FILE INPUT FOR AVATAR */}

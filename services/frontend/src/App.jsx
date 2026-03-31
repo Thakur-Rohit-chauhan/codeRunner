@@ -6,6 +6,7 @@ import Register from './pages/Register'
 import Problems from './pages/Problems'
 import ProblemSolver from './pages/ProblemSolver'
 import Profile from './pages/Profile'
+import Connections from './pages/Connections'
 import Settings from './pages/Settings'
 import TopicStats from './pages/TopicStats'
 import ListPage from './pages/ListPage'
@@ -26,6 +27,7 @@ export default function App() {
       <Route path="/register" element={<Register />} />
       <Route path="/problems" element={<ProtectedRoute><Problems /></ProtectedRoute>} />
       <Route path="/problems/:id" element={<ProtectedRoute><ProblemSolver /></ProtectedRoute>} />
+      <Route path="/profile/:username/connections" element={<ProtectedRoute><Connections /></ProtectedRoute>} />
       <Route path="/profile/:username" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
       <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
       <Route path="/topic/:topicName" element={<ProtectedRoute><TopicStats /></ProtectedRoute>} />
