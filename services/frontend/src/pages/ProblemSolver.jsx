@@ -2,7 +2,7 @@ import React, { Suspense, lazy, useState, useCallback, useEffect, useRef, useMem
 import { Link, useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { Panel, Group, Separator } from 'react-resizable-panels'
 import Editor from '@monaco-editor/react'
-import { ArrowLeft, ChevronLeft, ChevronRight, Shuffle, Play, Pause, Square, Upload, Clock, Settings, Check, X, Tag, Code2, FileText, MessageSquare, History, Maximize2, Minimize2, RotateCcw, RotateCw, Terminal, Bookmark, Star, ThumbsUp, MessageCircle, ExternalLink, Lightbulb, ChevronUp, Search, ArrowUpDown, SlidersHorizontal, User, LogOut, Palette, BarChart3, Layout, BookOpen, ChevronDown, Filter, EyeOff, Plus, Minus } from 'lucide-react'
+import { ArrowLeft, ChevronLeft, ChevronRight, Shuffle, Play, Pause, Square, Upload, Clock, Settings, Check, X, Tag, Code2, FileText, MessageSquare, History, Maximize2, Minimize2, RotateCcw, RotateCw, Terminal, Bookmark, Star, ThumbsUp, MessageCircle, ExternalLink, Lightbulb, ChevronUp, Search, ArrowUpDown, SlidersHorizontal, User, LogOut, Palette, BarChart3, Layout, BookOpen, ChevronDown, Filter, EyeOff, Plus, Minus, Shield } from 'lucide-react'
 import useAuthStore from '../store/authStore'
 import useProblemStore from '../store/problemStore'
 import { getSeedProblemDetail } from '../utils/problemSeed'
@@ -837,6 +837,7 @@ export default function ProblemSolver() {
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', padding: '0 4px 4px' }}>
                                     {[
                                         { icon: User, label: 'View Profile', onClick: () => { setProfileDropdownOpen(false); navigate(`/profile/${user?.username}`) } },
+                                        ...(user?.isAdmin ? [{ icon: Shield, label: 'Admin', onClick: () => { setProfileDropdownOpen(false); navigate('/admin') } }] : []),
                                         { icon: Settings, label: 'Settings', onClick: () => setProfileDropdownOpen(false) },
                                         { icon: Palette, label: 'Appearance', onClick: () => setProfileDropdownOpen(false) },
                                     ].map(({ icon: Icon, label, onClick }) => (

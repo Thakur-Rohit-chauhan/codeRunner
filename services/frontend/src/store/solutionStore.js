@@ -102,6 +102,7 @@ const normalizeSolutionEntry = (solution = {}) => ({
 
 export const canManageSolution = (solution, actor) => {
     if (!solution || !actor) return false
+    if (actor?.isAdmin) return true
 
     const ownerKey = solution.authorIdentityKey || solution.author?.identityKey || buildIdentityKey(solution.author)
     const actorKey = buildIdentityKey(actor)

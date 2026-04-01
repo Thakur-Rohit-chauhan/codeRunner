@@ -1,6 +1,6 @@
 import { useState, useMemo, useRef, useEffect } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import { Search, Check, Minus, ChevronLeft, ChevronRight, ArrowUpDown, SlidersHorizontal, BarChart3, Lock, Bookmark, FolderOpen, X, EyeOff, Eye } from 'lucide-react'
+import { Search, Check, Minus, ChevronLeft, ChevronRight, ArrowUpDown, SlidersHorizontal, BarChart3, Lock, Bookmark, FolderOpen, X, EyeOff, Eye, Plus, Pencil, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import Navbar from '../components/Navbar/Navbar'
 import FilterPopover from '../components/Problems/FilterPopover'
@@ -24,9 +24,178 @@ const sortOptions = [
     { key: 'tags', label: 'Tags', icon: 'eyeOff' },
 ]
 
+function ProblemEditorModal({ initialProblem, defaultDomain, onClose, onSave, isSaving }) {
+    const [form, setForm] = useState(() => ({
+        title: initialProblem?.title || '',
+        domain: initialProblem?.domain || defaultDomain || 'DSA',
+        difficulty: initialProblem?.difficulty || 'Medium',
+        acceptance: initialProblem?.acceptance || '0.0%',
+        tags: Array.isArray(initialProblem?.tags) ? initialProblem.tags.join(', ') : '',
+        description: initialProblem?.description || '',
+        exampleInput: initialProblem?.examples?.[0]?.input || '',
+        exampleOutput: initialProblem?.examples?.[0]?.output || '',
+        constraints: Array.isArray(initialProblem?.constraints) ? initialProblem.constraints.join('\n') : '',
+    }))
+    const [error, setError] = useState('')
+
+    const inputStyle = {
+        width: '100%',
+        padding: '11px 14px',
+        borderRadius: '12px',
+        background: 'rgba(255,255,255,0.04)',
+        border: '1px solid rgba(255,255,255,0.10)',
+        color: '#e5e7eb',
+        fontSize: '14px',
+        outline: 'none',
+        fontFamily: 'inherit',
+        boxSizing: 'border-box',
+    }
+
+    const handleSubmit = async () => {
+        if (!form.title.trim()) {
+            setError('Problem title is required')
+            return
+        }
+
+        setError('')
+        await onSave(form)
+    }
+
+    return (
+        <div
+            onMouseDown={(event) => {
+                if (event.target === event.currentTarget && !isSaving) onClose()
+            }}
+            style={{
+                position: 'fixed',
+                inset: 0,
+                zIndex: 100000,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '24px 16px',
+                background: 'rgba(3, 7, 18, 0.72)',
+                backdropFilter: 'blur(10px)',
+            }}
+        >
+            <div style={{ width: 'min(94vw, 720px)', maxHeight: '92vh', overflowY: 'auto', borderRadius: '24px', padding: '24px', background: 'linear-gradient(180deg, rgba(21,26,35,0.98) 0%, rgba(12,16,24,0.98) 100%)', border: '1px solid rgba(255,255,255,0.08)', boxShadow: '0 32px 80px rgba(0,0,0,0.45)' }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '16px', marginBottom: '22px' }}>
+                    <div>
+                        <h2 style={{ fontSize: '24px', fontWeight: 900, color: '#f8fafc', letterSpacing: '-0.04em', marginBottom: '6px' }}>
+                            {initialProblem ? 'Edit Problem' : 'Create Problem'}
+                        </h2>
+                        <p style={{ fontSize: '13px', color: '#94a3b8', lineHeight: 1.6 }}>
+                            Configure the problem metadata that will be used across the list, solver, and contest system.
+                        </p>
+                    </div>
+                    <button onClick={onClose} disabled={isSaving} style={{ width: '38px', height: '38px', borderRadius: '12px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: '#94a3b8', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: isSaving ? 'default' : 'pointer' }}>
+                        <X size={16} />
+                    </button>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 0.8fr 0.8fr', gap: '12px', marginBottom: '14px' }}>
+                    <div>
+                        <label style={{ display: 'block', fontSize: '12px', color: '#94a3b8', fontWeight: 700, marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Title</label>
+                        <input style={inputStyle} value={form.title} onChange={(event) => setForm((state) => ({ ...state, title: event.target.value }))} />
+                    </div>
+                    <div>
+                        <label style={{ display: 'block', fontSize: '12px', color: '#94a3b8', fontWeight: 700, marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Domain</label>
+                        <select style={inputStyle} value={form.domain} onChange={(event) => setForm((state) => ({ ...state, domain: event.target.value }))}>
+                            <option value="DSA">Algorithms</option>
+                            <option value="ML">Machine Learning</option>
+                            <option value="CTF">Cyber Security</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label style={{ display: 'block', fontSize: '12px', color: '#94a3b8', fontWeight: 700, marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Difficulty</label>
+                        <select style={inputStyle} value={form.difficulty} onChange={(event) => setForm((state) => ({ ...state, difficulty: event.target.value }))}>
+                            <option value="Easy">Easy</option>
+                            <option value="Medium">Medium</option>
+                            <option value="Hard">Hard</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '14px' }}>
+                    <div>
+                        <label style={{ display: 'block', fontSize: '12px', color: '#94a3b8', fontWeight: 700, marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Acceptance</label>
+                        <input style={inputStyle} value={form.acceptance} onChange={(event) => setForm((state) => ({ ...state, acceptance: event.target.value }))} placeholder="0.0%" />
+                    </div>
+                    <div>
+                        <label style={{ display: 'block', fontSize: '12px', color: '#94a3b8', fontWeight: 700, marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Tags</label>
+                        <input style={inputStyle} value={form.tags} onChange={(event) => setForm((state) => ({ ...state, tags: event.target.value }))} placeholder="Array, Graph, DP" />
+                    </div>
+                </div>
+
+                <div style={{ marginBottom: '14px' }}>
+                    <label style={{ display: 'block', fontSize: '12px', color: '#94a3b8', fontWeight: 700, marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Description</label>
+                    <textarea style={{ ...inputStyle, minHeight: '120px', resize: 'vertical' }} value={form.description} onChange={(event) => setForm((state) => ({ ...state, description: event.target.value }))} />
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '14px' }}>
+                    <div>
+                        <label style={{ display: 'block', fontSize: '12px', color: '#94a3b8', fontWeight: 700, marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Example Input</label>
+                        <textarea style={{ ...inputStyle, minHeight: '100px', resize: 'vertical' }} value={form.exampleInput} onChange={(event) => setForm((state) => ({ ...state, exampleInput: event.target.value }))} />
+                    </div>
+                    <div>
+                        <label style={{ display: 'block', fontSize: '12px', color: '#94a3b8', fontWeight: 700, marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Example Output</label>
+                        <textarea style={{ ...inputStyle, minHeight: '100px', resize: 'vertical' }} value={form.exampleOutput} onChange={(event) => setForm((state) => ({ ...state, exampleOutput: event.target.value }))} />
+                    </div>
+                </div>
+
+                <div style={{ marginBottom: '16px' }}>
+                    <label style={{ display: 'block', fontSize: '12px', color: '#94a3b8', fontWeight: 700, marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Constraints</label>
+                    <textarea style={{ ...inputStyle, minHeight: '96px', resize: 'vertical' }} value={form.constraints} onChange={(event) => setForm((state) => ({ ...state, constraints: event.target.value }))} placeholder="One constraint per line" />
+                </div>
+
+                {error && <p style={{ fontSize: '13px', color: '#fca5a5', marginBottom: '14px' }}>{error}</p>}
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', flexWrap: 'wrap' }}>
+                    <button onClick={onClose} disabled={isSaving} style={{ padding: '11px 16px', borderRadius: '14px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: '#cbd5e1', fontSize: '13px', fontWeight: 800, opacity: isSaving ? 0.6 : 1 }}>
+                        Cancel
+                    </button>
+                    <button onClick={handleSubmit} disabled={isSaving} style={{ padding: '11px 16px', borderRadius: '14px', background: 'linear-gradient(135deg, rgba(52,211,153,0.25) 0%, rgba(5,150,105,0.24) 100%)', border: '1px solid rgba(52,211,153,0.22)', color: '#d1fae5', fontSize: '13px', fontWeight: 800, boxShadow: '0 12px 24px rgba(5,150,105,0.18)', opacity: isSaving ? 0.6 : 1 }}>
+                        {isSaving ? 'Saving...' : initialProblem ? 'Save Changes' : 'Create Problem'}
+                    </button>
+                </div>
+            </div>
+        </div>
+    )
+}
+
+function ConfirmDeleteModal({ title, body, onClose, onConfirm, busy }) {
+    return (
+        <div
+            onMouseDown={(event) => {
+                if (event.target === event.currentTarget && !busy) onClose()
+            }}
+            style={{ position: 'fixed', inset: 0, zIndex: 100000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px 16px', background: 'rgba(3, 7, 18, 0.72)', backdropFilter: 'blur(10px)' }}
+        >
+            <div style={{ width: 'min(92vw, 440px)', borderRadius: '24px', padding: '24px', background: 'linear-gradient(180deg, rgba(21,26,35,0.98) 0%, rgba(12,16,24,0.98) 100%)', border: '1px solid rgba(255,255,255,0.08)', boxShadow: '0 32px 80px rgba(0,0,0,0.45)' }}>
+                <div style={{ width: '48px', height: '48px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '16px', marginBottom: '18px', background: 'rgba(248,113,113,0.12)', border: '1px solid rgba(248,113,113,0.16)', color: '#fca5a5' }}>
+                    <Trash2 size={20} />
+                </div>
+                <h2 style={{ fontSize: '24px', fontWeight: 900, color: '#f8fafc', letterSpacing: '-0.04em', marginBottom: '10px' }}>{title}</h2>
+                <p style={{ fontSize: '14px', lineHeight: 1.7, color: '#94a3b8', marginBottom: '22px' }}>{body}</p>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', flexWrap: 'wrap' }}>
+                    <button onClick={onClose} disabled={busy} style={{ padding: '11px 16px', borderRadius: '14px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: '#cbd5e1', fontSize: '13px', fontWeight: 800, opacity: busy ? 0.6 : 1 }}>
+                        No
+                    </button>
+                    <button onClick={onConfirm} disabled={busy} style={{ padding: '11px 16px', borderRadius: '14px', background: 'linear-gradient(135deg, rgba(248,113,113,0.18) 0%, rgba(220,38,38,0.18) 100%)', border: '1px solid rgba(248,113,113,0.22)', color: '#fecaca', fontSize: '13px', fontWeight: 800, opacity: busy ? 0.6 : 1 }}>
+                        Yes
+                    </button>
+                </div>
+            </div>
+        </div>
+    )
+}
+
 export default function Problems() {
     const problems = useProblemStore((state) => state.problems)
     const toggleBookmark = useProblemStore((state) => state.toggleBookmark)
+    const createProblem = useProblemStore((state) => state.createProblem)
+    const updateProblem = useProblemStore((state) => state.updateProblem)
+    const deleteProblem = useProblemStore((state) => state.deleteProblem)
     const user = useAuthStore((state) => state.user)
     const [search, setSearch] = useState('')
     const [page, setPage] = useState(1)
@@ -39,6 +208,11 @@ export default function Problems() {
     const [filters, setFilters] = useState([
         { id: 1, enabled: true, property: 'Status', operator: 'is', value: '' }
     ])
+    const [editingProblem, setEditingProblem] = useState(null)
+    const [showProblemEditor, setShowProblemEditor] = useState(false)
+    const [pendingDeleteProblem, setPendingDeleteProblem] = useState(null)
+    const [isSavingProblem, setIsSavingProblem] = useState(false)
+    const isAdmin = Boolean(user?.isAdmin)
 
     const sortRef = useRef(null)
     const perPage = 15
@@ -158,6 +332,61 @@ export default function Problems() {
         })
     }
 
+    const openCreateProblem = () => {
+        setEditingProblem(null)
+        setShowProblemEditor(true)
+    }
+
+    const openEditProblem = (event, problem) => {
+        event.preventDefault()
+        event.stopPropagation()
+        setEditingProblem(problem)
+        setShowProblemEditor(true)
+    }
+
+    const handleSaveProblem = async (form) => {
+        setIsSavingProblem(true)
+        try {
+            if (editingProblem) {
+                await updateProblem(editingProblem.id, form)
+                toast.success('Problem updated', {
+                    style: { background: 'rgba(30,36,44,0.95)', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' },
+                })
+            } else {
+                await createProblem(form)
+                toast.success('Problem created', {
+                    style: { background: 'rgba(30,36,44,0.95)', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' },
+                })
+            }
+            setShowProblemEditor(false)
+            setEditingProblem(null)
+        } catch (error) {
+            toast.error(error?.response?.data?.detail || 'Unable to save problem', {
+                style: { background: 'rgba(30,36,44,0.95)', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' },
+            })
+        } finally {
+            setIsSavingProblem(false)
+        }
+    }
+
+    const handleDeleteProblem = async () => {
+        if (!pendingDeleteProblem) return
+        setIsSavingProblem(true)
+        try {
+            await deleteProblem(pendingDeleteProblem.id)
+            toast.success('Problem deleted', {
+                style: { background: 'rgba(30,36,44,0.95)', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' },
+            })
+            setPendingDeleteProblem(null)
+        } catch (error) {
+            toast.error(error?.response?.data?.detail || 'Unable to delete problem', {
+                style: { background: 'rgba(30,36,44,0.95)', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' },
+            })
+        } finally {
+            setIsSavingProblem(false)
+        }
+    }
+
     return (
         <div className="min-h-screen" style={{
             background: 'linear-gradient(135deg, #0b0f19 0%, #161b22 100%)',
@@ -165,6 +394,31 @@ export default function Problems() {
             fontFamily: '"Inter", "Roboto", sans-serif'
         }}>
             <Navbar />
+            {showProblemEditor && (
+                <ProblemEditorModal
+                    initialProblem={editingProblem}
+                    defaultDomain={urlDomain || 'DSA'}
+                    onClose={() => {
+                        if (isSavingProblem) return
+                        setShowProblemEditor(false)
+                        setEditingProblem(null)
+                    }}
+                    onSave={handleSaveProblem}
+                    isSaving={isSavingProblem}
+                />
+            )}
+            {pendingDeleteProblem && (
+                <ConfirmDeleteModal
+                    title="Delete this problem?"
+                    body={`You are about to remove "${pendingDeleteProblem.title}" from the problem system. This action cannot be undone.`}
+                    onClose={() => {
+                        if (isSavingProblem) return
+                        setPendingDeleteProblem(null)
+                    }}
+                    onConfirm={handleDeleteProblem}
+                    busy={isSavingProblem}
+                />
+            )}
 
             {/* Main content */}
             <div style={{ maxWidth: '1100px', margin: '0 auto', padding: '28px 32px 48px' }}>
@@ -327,6 +581,28 @@ export default function Problems() {
                                 <span style={{ color: '#fff', fontWeight: 600 }}>{solvedCount}</span> <span className="mx-0.5">/</span> {totalCount} Solved
                             </span>
                         </div>
+                        {isAdmin && (
+                            <button
+                                onClick={openCreateProblem}
+                                style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '8px',
+                                    padding: '10px 14px',
+                                    borderRadius: '12px',
+                                    border: '1px solid rgba(52,211,153,0.22)',
+                                    background: 'rgba(52,211,153,0.10)',
+                                    color: '#6ee7b7',
+                                    fontSize: '13px',
+                                    fontWeight: 800,
+                                    cursor: 'pointer',
+                                    fontFamily: 'inherit',
+                                }}
+                            >
+                                <Plus size={15} />
+                                Add Problem
+                            </button>
+                        )}
                     </div>
                 </div>
 
@@ -437,6 +713,32 @@ export default function Problems() {
                                         fill: p.starred ? 'rgba(52, 211, 153, 0.18)' : 'none',
                                     }} />
                                 </div>
+                                {isAdmin && (
+                                    <>
+                                        <button
+                                            onClick={(event) => openEditProblem(event, p)}
+                                            title="Edit problem"
+                                            style={{ cursor: 'pointer', padding: '4px', borderRadius: '6px', transition: 'all 0.2s', background: 'transparent', border: 'none' }}
+                                            onMouseEnter={(event) => { event.currentTarget.style.backgroundColor = 'rgba(96,165,250,0.12)' }}
+                                            onMouseLeave={(event) => { event.currentTarget.style.backgroundColor = 'transparent' }}
+                                        >
+                                            <Pencil style={{ width: '16px', height: '16px', color: '#60a5fa' }} />
+                                        </button>
+                                        <button
+                                            onClick={(event) => {
+                                                event.preventDefault()
+                                                event.stopPropagation()
+                                                setPendingDeleteProblem(p)
+                                            }}
+                                            title="Delete problem"
+                                            style={{ cursor: 'pointer', padding: '4px', borderRadius: '6px', transition: 'all 0.2s', background: 'transparent', border: 'none' }}
+                                            onMouseEnter={(event) => { event.currentTarget.style.backgroundColor = 'rgba(248,113,113,0.12)' }}
+                                            onMouseLeave={(event) => { event.currentTarget.style.backgroundColor = 'transparent' }}
+                                        >
+                                            <Trash2 style={{ width: '16px', height: '16px', color: '#f87171' }} />
+                                        </button>
+                                    </>
+                                )}
                             </div>
                         </Link>
                     ))}

@@ -334,6 +334,61 @@ const useContestStore = create((set, get) => ({
         return id
     },
 
+    updateContest: async (contestId, updates = {}, username) => {
+        const current = get().contests.find((contest) => contest.id === contestId)
+        if (!current) return null
+
+        const optimistic = normalizeContest({
+            ...current,
+            ...updates,
+            createdBy: updates.createdBy || current.createdBy || username || 'user',
+            ranking: updates.ranking || current.ranking || (updates.domain === 'ML' ? 'accuracy' : 'score'),
+        })
+
+        set((state) => ({
+            contests: upsertContest(state.contests, optimistic),
+        }))
+
+        try {
+            const response = await api.put(`/contest/contests/${contestId}`, {
+                ...updates,
+                createdBy: updates.createdBy || current.createdBy || username || 'user',
+            })
+            const contest = response.data?.contest
+            if (contest) {
+                set((state) => ({
+                    contests: upsertContest(state.contests, contest),
+                }))
+                return contest
+            }
+        } catch {
+            // Keep optimistic local state so admins can continue editing even when the backend is down.
+        }
+
+        return optimistic
+    },
+
+    deleteContest: async (contestId) => {
+        set((state) => {
+            const nextRegistered = { ...state.registered }
+            delete nextRegistered[contestId]
+
+            return {
+                contests: state.contests.filter((contest) => contest.id !== contestId),
+                registered: nextRegistered,
+                activeAttempt: state.activeAttempt?.contestId === contestId ? null : state.activeAttempt,
+            }
+        })
+
+        try {
+            await api.delete(`/contest/contests/${contestId}`)
+        } catch {
+            // Keep optimistic local state so admins can continue managing contests offline.
+        }
+
+        return true
+    },
+
     startAttempt: (contestId) => set({
         activeAttempt: { contestId, startedAt: new Date().toISOString(), answers: {} },
     }),

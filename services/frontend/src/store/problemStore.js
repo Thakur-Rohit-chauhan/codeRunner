@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import api from '../services/api'
+import { buildStarterCodeMap } from '../utils/compilerLanguages'
 import {
     getSeedProblemDetail,
     seedProblemDetailsById,
@@ -8,9 +9,15 @@ import {
 } from '../utils/problemSeed'
 
 const LOCAL_SUBMISSIONS_STORAGE_KEY = 'coderunner_problem_submissions_v1'
+const LOCAL_PROBLEM_CATALOG_STORAGE_KEY = 'coderunner_problem_catalog_v1'
 
 const defaultLocalState = {
     submissionsByUsername: {},
+}
+
+const defaultLocalCatalogState = {
+    overridesById: {},
+    deletedIds: [],
 }
 
 const safeReadLocalState = () => {
@@ -34,6 +41,35 @@ const persistLocalState = (state) => {
     try {
         window.localStorage.setItem(LOCAL_SUBMISSIONS_STORAGE_KEY, JSON.stringify({
             submissionsByUsername: state?.submissionsByUsername || {},
+        }))
+    } catch {
+        // Ignore persistence failures and keep the in-memory store usable.
+    }
+}
+
+const safeReadLocalCatalogState = () => {
+    if (typeof window === 'undefined') return defaultLocalCatalogState
+
+    try {
+        const raw = window.localStorage.getItem(LOCAL_PROBLEM_CATALOG_STORAGE_KEY)
+        if (!raw) return defaultLocalCatalogState
+        const parsed = JSON.parse(raw)
+        return {
+            overridesById: parsed?.overridesById && typeof parsed.overridesById === 'object' ? parsed.overridesById : {},
+            deletedIds: Array.isArray(parsed?.deletedIds) ? parsed.deletedIds.map((id) => String(id)) : [],
+        }
+    } catch {
+        return defaultLocalCatalogState
+    }
+}
+
+const persistLocalCatalogState = (state) => {
+    if (typeof window === 'undefined') return
+
+    try {
+        window.localStorage.setItem(LOCAL_PROBLEM_CATALOG_STORAGE_KEY, JSON.stringify({
+            overridesById: state?.overridesById || {},
+            deletedIds: state?.deletedIds || [],
         }))
     } catch {
         // Ignore persistence failures and keep the in-memory store usable.
@@ -74,6 +110,12 @@ const shouldFallbackToLocalSubmission = (error) => {
     if (!error) return false
     if (!error.response) return true
     return [500, 502, 503, 504].includes(error.response.status)
+}
+
+const shouldFallbackToLocalProblemMutation = (error) => {
+    if (!error) return false
+    if (!error.response) return true
+    return [404, 405, 500, 502, 503, 504].includes(error.response.status)
 }
 
 const createLocalSubmissionFallback = (problem, payload, error) => {
@@ -120,6 +162,13 @@ const createLocalSubmissionFallback = (problem, payload, error) => {
 }
 
 const initialLocalState = safeReadLocalState()
+const initialLocalCatalogState = safeReadLocalCatalogState()
+const initialProblemCatalog = applyLocalProblemMutations({
+    problems: seedProblemSummaries,
+    problemDetailsById: seedProblemDetailsById,
+    overridesById: initialLocalCatalogState.overridesById,
+    deletedIds: initialLocalCatalogState.deletedIds,
+})
 
 const mergeProblemIntoState = (state, problem) => {
     if (!problem) return state
@@ -146,11 +195,137 @@ const mergeProblemIntoState = (state, problem) => {
     }
 }
 
+function applyLocalProblemMutations({ problems = [], problemDetailsById = {}, overridesById = {}, deletedIds = [] }) {
+    const deletedSet = new Set((deletedIds || []).map((id) => String(id)))
+    const nextProblemDetailsById = { ...problemDetailsById }
+    const seenIds = new Set()
+
+    deletedSet.forEach((problemId) => {
+        delete nextProblemDetailsById[problemId]
+    })
+
+    const nextProblems = problems.reduce((accumulator, problem) => {
+        const problemId = String(problem.id)
+        if (deletedSet.has(problemId)) return accumulator
+
+        const override = overridesById[problemId]
+        const mergedProblem = override ? { ...problem, ...override } : problem
+        seenIds.add(problemId)
+        nextProblemDetailsById[problemId] = {
+            ...(nextProblemDetailsById[problemId] || getSeedProblemDetail(problem.id) || {}),
+            ...mergedProblem,
+        }
+        accumulator.push(mergedProblem)
+        return accumulator
+    }, [])
+
+    Object.entries(overridesById || {}).forEach(([problemId, override]) => {
+        if (!override || deletedSet.has(problemId) || seenIds.has(problemId)) return
+        nextProblems.unshift(override)
+        nextProblemDetailsById[problemId] = {
+            ...(nextProblemDetailsById[problemId] || getSeedProblemDetail(override.id) || {}),
+            ...override,
+        }
+    })
+
+    return {
+        problems: nextProblems,
+        problemDetailsById: nextProblemDetailsById,
+    }
+}
+
+const removeProblemFromState = (state, problemId) => {
+    const normalizedProblemId = String(problemId)
+    const nextProblemDetailsById = { ...state.problemDetailsById }
+    delete nextProblemDetailsById[normalizedProblemId]
+
+    return {
+        ...state,
+        problems: state.problems.filter((entry) => String(entry.id) !== normalizedProblemId),
+        problemDetailsById: nextProblemDetailsById,
+        problemsByUsername: Object.fromEntries(
+            Object.entries(state.problemsByUsername).map(([username, entries]) => [
+                username,
+                (entries || []).filter((entry) => String(entry.id) !== normalizedProblemId),
+            ])
+        ),
+    }
+}
+
+const buildProblemMutationPayload = (problem = {}, current = null) => {
+    const title = String(problem.title || current?.title || '').trim()
+    const domain = problem.domain || current?.domain || 'DSA'
+    const exampleInput = problem.exampleInput ?? problem.exInput ?? current?.examples?.[0]?.input ?? ''
+    const exampleOutput = problem.exampleOutput ?? problem.exOutput ?? current?.examples?.[0]?.output ?? ''
+    const rawTags = problem.tags ?? current?.tags ?? []
+    const tags = Array.isArray(rawTags)
+        ? rawTags
+        : String(rawTags).split(',').map((tag) => tag.trim()).filter(Boolean)
+    const rawConstraints = problem.constraints ?? problem.constraint ?? current?.constraints ?? []
+    const constraints = Array.isArray(rawConstraints)
+        ? rawConstraints
+        : String(rawConstraints)
+            .split('\n')
+            .map((constraint) => constraint.trim())
+            .filter(Boolean)
+
+    return {
+        title,
+        domain,
+        difficulty: problem.difficulty || current?.difficulty || 'Medium',
+        acceptance: problem.acceptance || current?.acceptance || '0.0%',
+        tags,
+        description: problem.description ?? current?.description ?? '',
+        examples: exampleInput || exampleOutput
+            ? [{ input: exampleInput, output: exampleOutput, explanation: null }]
+            : (current?.examples || []),
+        constraints,
+        starterCode: problem.starterCode || current?.starterCode || buildStarterCodeMap({ title, domain }),
+        testCases: problem.testCases || current?.testCases || (
+            exampleInput || exampleOutput
+                ? [{ input: exampleInput, expectedOutput: exampleOutput || 'sample output' }]
+                : [{ input: 'sample input', expectedOutput: 'sample output' }]
+        ),
+        companies: problem.companies || current?.companies || [],
+    }
+}
+
+const buildLocalProblemRecord = (problemId, payload, current = null) => ({
+    ...(current || {}),
+    id: current?.id ?? problemId,
+    title: payload.title,
+    domain: payload.domain,
+    difficulty: payload.difficulty,
+    acceptance: payload.acceptance,
+    tags: payload.tags,
+    description: payload.description,
+    examples: payload.examples,
+    constraints: payload.constraints,
+    starterCode: payload.starterCode,
+    testCases: payload.testCases,
+    companies: payload.companies,
+    status: current?.status ?? null,
+    starred: current?.starred ?? false,
+    lastSubmitted: current?.lastSubmitted ?? null,
+    isCustom: current?.isCustom ?? true,
+})
+
+const nextLocalProblemId = (state) => {
+    const numericIds = [
+        ...state.problems.map((problem) => Number(problem.id)),
+        ...Object.keys(state.localProblemOverridesById || {}).map((problemId) => Number(problemId)),
+    ].filter((value) => Number.isFinite(value))
+
+    return (numericIds.length > 0 ? Math.max(...numericIds) : 0) + 1
+}
+
 const useProblemStore = create((set, get) => ({
-    problems: seedProblemSummaries,
-    problemDetailsById: seedProblemDetailsById,
+    problems: initialProblemCatalog.problems,
+    problemDetailsById: initialProblemCatalog.problemDetailsById,
     problemsByUsername: {},
     topics: seedProblemTopics,
+    localProblemOverridesById: initialLocalCatalogState.overridesById,
+    localDeletedProblemIds: initialLocalCatalogState.deletedIds,
     submissionsByUsername: initialLocalState.submissionsByUsername,
     isSyncing: false,
     syncError: null,
@@ -176,26 +351,43 @@ const useProblemStore = create((set, get) => ({
                     }
                 })
 
-                return {
+                const mutatedCatalog = applyLocalProblemMutations({
                     problems,
+                    problemDetailsById: nextDetails,
+                    overridesById: state.localProblemOverridesById,
+                    deletedIds: state.localDeletedProblemIds,
+                })
+
+                return {
+                    problems: mutatedCatalog.problems,
                     topics,
                     problemsByUsername: username ? {
                         ...state.problemsByUsername,
-                        [username]: problems,
+                        [username]: mutatedCatalog.problems,
                     } : state.problemsByUsername,
-                    problemDetailsById: nextDetails,
+                    problemDetailsById: mutatedCatalog.problemDetailsById,
                     isSyncing: false,
                     syncError: null,
                     hasSynced: true,
                 }
             })
         } catch {
-            set({
-                problems: seedProblemSummaries,
-                topics: seedProblemTopics,
-                isSyncing: false,
-                syncError: 'Unable to sync problems from the backend.',
-                hasSynced: true,
+            set((state) => {
+                const mutatedCatalog = applyLocalProblemMutations({
+                    problems: seedProblemSummaries,
+                    problemDetailsById: seedProblemDetailsById,
+                    overridesById: state.localProblemOverridesById,
+                    deletedIds: state.localDeletedProblemIds,
+                })
+
+                return {
+                    problems: mutatedCatalog.problems,
+                    topics: seedProblemTopics,
+                    problemDetailsById: mutatedCatalog.problemDetailsById,
+                    isSyncing: false,
+                    syncError: 'Unable to sync problems from the backend.',
+                    hasSynced: true,
+                }
             })
         }
     },
@@ -207,37 +399,185 @@ const useProblemStore = create((set, get) => ({
             const response = await api.get('/problem/problems', {
                 params: { username },
             })
-            const problems = Array.isArray(response.data?.problems) ? response.data.problems : seedProblemSummaries
+            const baseProblems = Array.isArray(response.data?.problems) ? response.data.problems : seedProblemSummaries
+            const mutatedProblems = applyLocalProblemMutations({
+                problems: baseProblems,
+                problemDetailsById: get().problemDetailsById,
+                overridesById: get().localProblemOverridesById,
+                deletedIds: get().localDeletedProblemIds,
+            }).problems
             set((state) => ({
                 problemsByUsername: {
                     ...state.problemsByUsername,
-                    [username]: problems,
+                    [username]: mutatedProblems,
                 },
             }))
-            return problems
+            return mutatedProblems
         } catch {
             return get().problemsByUsername[username] || []
         }
     },
 
     fetchProblemDetail: async (problemId, username) => {
+        const normalizedProblemId = String(problemId)
+        if (get().localDeletedProblemIds.includes(normalizedProblemId)) {
+            return null
+        }
+
         try {
             const response = await api.get(`/problem/problems/${problemId}`, {
                 params: username ? { username } : undefined,
             })
-            const problem = response.data?.problem
+            const localOverride = get().localProblemOverridesById[normalizedProblemId]
+            const problem = response.data?.problem ? {
+                ...response.data.problem,
+                ...(localOverride || {}),
+            } : null
             if (!problem) {
-                return get().problemDetailsById[String(problemId)] || getSeedProblemDetail(problemId)
+                return get().problemDetailsById[normalizedProblemId] || localOverride || getSeedProblemDetail(problemId)
             }
 
             set((state) => mergeProblemIntoState(state, problem))
             return {
-                ...(get().problemDetailsById[String(problemId)] || {}),
+                ...(get().problemDetailsById[normalizedProblemId] || {}),
                 ...problem,
             }
         } catch {
-            return get().problemDetailsById[String(problemId)] || getSeedProblemDetail(problemId)
+            return get().problemDetailsById[normalizedProblemId]
+                || get().localProblemOverridesById[normalizedProblemId]
+                || getSeedProblemDetail(problemId)
         }
+    },
+
+    createProblem: async (problemData = {}) => {
+        const payload = buildProblemMutationPayload(problemData)
+        try {
+            const response = await api.post('/problem/problems', payload)
+            const problem = response.data?.problem
+            if (!problem) return null
+
+            set((state) => {
+                const nextOverridesById = {
+                    ...state.localProblemOverridesById,
+                    [String(problem.id)]: problem,
+                }
+                const nextDeletedProblemIds = state.localDeletedProblemIds.filter((id) => id !== String(problem.id))
+                persistLocalCatalogState({
+                    overridesById: nextOverridesById,
+                    deletedIds: nextDeletedProblemIds,
+                })
+                return {
+                    ...mergeProblemIntoState(state, problem),
+                    localProblemOverridesById: nextOverridesById,
+                    localDeletedProblemIds: nextDeletedProblemIds,
+                }
+            })
+            return problem
+        } catch (error) {
+            if (!shouldFallbackToLocalProblemMutation(error)) {
+                throw error
+            }
+
+            const problemId = nextLocalProblemId(get())
+            const fallbackProblem = buildLocalProblemRecord(problemId, payload)
+            set((state) => {
+                const nextOverridesById = {
+                    ...state.localProblemOverridesById,
+                    [String(problemId)]: fallbackProblem,
+                }
+                const nextDeletedProblemIds = state.localDeletedProblemIds.filter((id) => id !== String(problemId))
+                persistLocalCatalogState({
+                    overridesById: nextOverridesById,
+                    deletedIds: nextDeletedProblemIds,
+                })
+                return {
+                    ...mergeProblemIntoState(state, fallbackProblem),
+                    localProblemOverridesById: nextOverridesById,
+                    localDeletedProblemIds: nextDeletedProblemIds,
+                }
+            })
+            return fallbackProblem
+        }
+    },
+
+    updateProblem: async (problemId, updates = {}) => {
+        const current = get().problemDetailsById[String(problemId)] || getSeedProblemDetail(problemId)
+        const payload = buildProblemMutationPayload(updates, current)
+        try {
+            const response = await api.put(`/problem/problems/${problemId}`, payload)
+            const problem = response.data?.problem
+            if (!problem) return current
+
+            set((state) => {
+                const nextOverridesById = {
+                    ...state.localProblemOverridesById,
+                    [String(problem.id)]: problem,
+                }
+                const nextDeletedProblemIds = state.localDeletedProblemIds.filter((id) => id !== String(problem.id))
+                persistLocalCatalogState({
+                    overridesById: nextOverridesById,
+                    deletedIds: nextDeletedProblemIds,
+                })
+                return {
+                    ...mergeProblemIntoState(state, problem),
+                    localProblemOverridesById: nextOverridesById,
+                    localDeletedProblemIds: nextDeletedProblemIds,
+                }
+            })
+            return problem
+        } catch (error) {
+            if (!shouldFallbackToLocalProblemMutation(error)) {
+                throw error
+            }
+
+            const fallbackProblem = buildLocalProblemRecord(problemId, payload, current)
+            set((state) => {
+                const nextOverridesById = {
+                    ...state.localProblemOverridesById,
+                    [String(problemId)]: fallbackProblem,
+                }
+                const nextDeletedProblemIds = state.localDeletedProblemIds.filter((id) => id !== String(problemId))
+                persistLocalCatalogState({
+                    overridesById: nextOverridesById,
+                    deletedIds: nextDeletedProblemIds,
+                })
+                return {
+                    ...mergeProblemIntoState(state, fallbackProblem),
+                    localProblemOverridesById: nextOverridesById,
+                    localDeletedProblemIds: nextDeletedProblemIds,
+                }
+            })
+            return fallbackProblem
+        }
+    },
+
+    deleteProblem: async (problemId) => {
+        try {
+            await api.delete(`/problem/problems/${problemId}`)
+        } catch (error) {
+            if (!shouldFallbackToLocalProblemMutation(error)) {
+                throw error
+            }
+        }
+
+        set((state) => {
+            const nextOverridesById = { ...state.localProblemOverridesById }
+            delete nextOverridesById[String(problemId)]
+            const nextDeletedProblemIds = Array.from(new Set([
+                ...state.localDeletedProblemIds,
+                String(problemId),
+            ]))
+            persistLocalCatalogState({
+                overridesById: nextOverridesById,
+                deletedIds: nextDeletedProblemIds,
+            })
+            return {
+                ...removeProblemFromState(state, problemId),
+                localProblemOverridesById: nextOverridesById,
+                localDeletedProblemIds: nextDeletedProblemIds,
+            }
+        })
+        return true
     },
 
     syncUserSubmissions: async (username) => {

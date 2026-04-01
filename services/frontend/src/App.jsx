@@ -14,6 +14,7 @@ import Settings from './pages/Settings'
 import TopicStats from './pages/TopicStats'
 import ListPage from './pages/ListPage'
 import Notes from './pages/Notes'
+import Admin from './pages/Admin'
 import Contests from './pages/Contests'
 import ContestDetail from './pages/ContestDetail'
 import ContestArena from './pages/ContestArena'
@@ -23,6 +24,15 @@ function ProtectedRoute({ children }) {
   const isHydrating = useAuthStore((s) => s.isHydrating)
   if (isHydrating) return null
   return isAuthenticated ? children : <Navigate to="/login" replace />
+}
+
+function AdminRoute({ children }) {
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
+  const isHydrating = useAuthStore((s) => s.isHydrating)
+  const user = useAuthStore((s) => s.user)
+  if (isHydrating) return null
+  if (!isAuthenticated) return <Navigate to="/login" replace />
+  return user?.isAdmin ? children : <Navigate to="/problems" replace />
 }
 
 export default function App() {
@@ -63,6 +73,7 @@ export default function App() {
       <Route path="/profile/:username" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
       <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
       <Route path="/notes" element={<ProtectedRoute><Notes /></ProtectedRoute>} />
+      <Route path="/admin" element={<AdminRoute><Admin /></AdminRoute>} />
       <Route path="/topic/:topicName" element={<ProtectedRoute><TopicStats /></ProtectedRoute>} />
       <Route path="/list/:listId" element={<ProtectedRoute><ListPage /></ProtectedRoute>} />
       <Route path="/contests" element={<ProtectedRoute><Contests /></ProtectedRoute>} />

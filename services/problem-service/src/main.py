@@ -27,13 +27,46 @@ def normalize_username(value: str = "") -> str:
     return value.strip().lower().replace(" ", "_").replace("-", "_")
 
 
+def normalize_tags(tags: list[str] | None) -> list[str]:
+    return [str(tag).strip() for tag in (tags or []) if str(tag).strip()]
+
+
+def normalize_constraints(constraints: list[str] | None) -> list[str]:
+    return [str(constraint).strip() for constraint in (constraints or []) if str(constraint).strip()]
+
+
+def normalize_examples(examples: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    normalized = []
+    for example in examples or []:
+        if not isinstance(example, dict):
+            continue
+        normalized.append({
+            "input": str(example.get("input") or "").strip(),
+            "output": str(example.get("output") or "").strip(),
+            "explanation": example.get("explanation"),
+        })
+    return normalized
+
+
+def normalize_test_cases(test_cases: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    normalized = []
+    for case in test_cases or []:
+        if not isinstance(case, dict):
+            continue
+        normalized.append({
+            "input": str(case.get("input") or "").strip(),
+            "expectedOutput": str(case.get("expectedOutput") or "").strip(),
+        })
+    return normalized
+
+
 def load_seed() -> dict[str, Any]:
     return json.loads(SEED_PATH.read_text(encoding="utf-8"))
 
 
 _seed_data = load_seed()
 _seed_records = list(_seed_data.get("problems") or [])
-_catalog = {str(problem["id"]): problem for problem in _seed_records}
+_catalog = {str(problem["id"]): deepcopy(problem) for problem in _seed_records}
 _catalog_order = [str(problem["id"]) for problem in _seed_records]
 _default_state = {
     problem_id: {
@@ -43,6 +76,16 @@ _default_state = {
     }
     for problem_id, problem in _catalog.items()
 }
+
+
+def next_problem_id() -> int:
+    numeric_ids = []
+    for problem_id in _catalog.keys():
+        try:
+            numeric_ids.append(int(problem_id))
+        except ValueError:
+            continue
+    return max(numeric_ids, default=0) + 1
 
 
 def get_problem_or_404(problem_id: str) -> dict[str, Any]:
@@ -72,6 +115,16 @@ def ensure_user_state(username: str | None) -> dict[str, Any] | None:
     }
     _user_state[normalized] = state
     return state
+
+
+def sync_user_problem_state(problem_id: str) -> None:
+    for user_state in _user_state.values():
+        user_state["problems"].setdefault(str(problem_id), build_problem_state(problem_id))
+
+
+def remove_user_problem_state(problem_id: str) -> None:
+    for user_state in _user_state.values():
+        user_state["problems"].pop(str(problem_id), None)
 
 
 def get_problem_state(problem_id: str, username: str | None) -> dict[str, Any]:
@@ -176,6 +229,46 @@ def build_submission_record(problem: dict[str, Any], payload: "SubmitRequest", r
     }
 
 
+def build_problem_record(problem_id: int | str, payload: "ProblemMutationRequest", existing: dict[str, Any] | None = None) -> dict[str, Any]:
+    base = deepcopy(existing or {})
+    title = (payload.title or base.get("title") or "").strip()
+    domain = (payload.domain or base.get("domain") or "DSA").strip() or "DSA"
+    difficulty = (payload.difficulty or base.get("difficulty") or "Medium").strip() or "Medium"
+
+    if not title:
+        raise HTTPException(status_code=400, detail="Problem title is required")
+
+    starter_code = deepcopy(payload.starterCode) if payload.starterCode is not None else deepcopy(base.get("starterCode") or {})
+    test_cases = normalize_test_cases(payload.testCases) if payload.testCases is not None else deepcopy(base.get("testCases") or [])
+    examples = normalize_examples(payload.examples) if payload.examples is not None else deepcopy(base.get("examples") or [])
+    constraints = normalize_constraints(payload.constraints) if payload.constraints is not None else deepcopy(base.get("constraints") or [])
+    companies = [str(company).strip() for company in (payload.companies if payload.companies is not None else base.get("companies") or []) if str(company).strip()]
+
+    if not test_cases:
+        test_cases = [{"input": "sample input", "expectedOutput": "sample output"}]
+
+    if not starter_code:
+        starter_code = {}
+
+    return {
+        "id": existing.get("id") if existing else problem_id,
+        "title": title,
+        "domain": domain,
+        "difficulty": difficulty,
+        "acceptance": (payload.acceptance or base.get("acceptance") or "0.0%").strip() or "0.0%",
+        "tags": normalize_tags(payload.tags) if payload.tags is not None else deepcopy(base.get("tags") or []),
+        "description": payload.description if payload.description is not None else base.get("description") or "",
+        "examples": examples,
+        "constraints": constraints,
+        "starterCode": starter_code,
+        "testCases": test_cases,
+        "companies": companies,
+        "defaultStatus": base.get("defaultStatus"),
+        "defaultStarred": bool(base.get("defaultStarred")),
+        "defaultLastSubmitted": base.get("defaultLastSubmitted"),
+    }
+
+
 class BookmarkRequest(BaseModel):
     username: str
     starred: bool | None = None
@@ -192,6 +285,20 @@ class SubmitRequest(BaseModel):
     username: str
     language: str | None = None
     code: str | None = None
+
+
+class ProblemMutationRequest(BaseModel):
+    title: str | None = None
+    domain: str | None = None
+    difficulty: str | None = None
+    acceptance: str | None = None
+    tags: list[str] | None = None
+    description: str | None = None
+    examples: list[dict[str, Any]] | None = None
+    constraints: list[str] | None = None
+    starterCode: dict[str, str] | None = None
+    testCases: list[dict[str, Any]] | None = None
+    companies: list[str] | None = None
 
 
 app = FastAPI(title="Problem Service", version="0.1.0")
@@ -242,6 +349,38 @@ def get_problem_submissions(problem_id: str, username: str | None = None) -> dic
 @app.get("/users/{username}/submissions")
 def get_user_submissions(username: str) -> dict[str, list[dict[str, Any]]]:
     return {"submissions": list_user_submissions(username)}
+
+
+@app.post("/problems")
+def create_problem(payload: ProblemMutationRequest) -> dict[str, Any]:
+    with _lock:
+        problem_id = next_problem_id()
+        problem = build_problem_record(problem_id, payload)
+        _catalog[str(problem_id)] = problem
+        _catalog_order.append(str(problem_id))
+        _default_state[str(problem_id)] = build_problem_state(str(problem_id))
+        sync_user_problem_state(str(problem_id))
+        return {"problem": build_problem_detail(problem, build_problem_state(str(problem_id)))}
+
+
+@app.put("/problems/{problem_id}")
+def update_problem(problem_id: str, payload: ProblemMutationRequest) -> dict[str, Any]:
+    with _lock:
+        existing = get_problem_or_404(problem_id)
+        updated = build_problem_record(existing["id"], payload, existing)
+        _catalog[str(problem_id)] = updated
+        return {"problem": build_problem_detail(updated, build_problem_state(str(problem_id)))}
+
+
+@app.delete("/problems/{problem_id}")
+def delete_problem(problem_id: str) -> dict[str, Any]:
+    with _lock:
+        get_problem_or_404(problem_id)
+        _catalog.pop(str(problem_id), None)
+        _default_state.pop(str(problem_id), None)
+        _catalog_order[:] = [entry for entry in _catalog_order if str(entry) != str(problem_id)]
+        remove_user_problem_state(str(problem_id))
+        return {"ok": True}
 
 
 @app.post("/problems/{problem_id}/bookmark")

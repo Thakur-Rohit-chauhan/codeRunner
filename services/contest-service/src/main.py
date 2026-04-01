@@ -193,6 +193,18 @@ def seeded_contests() -> list[dict[str, Any]]:
     return contests
 
 
+def normalize_contest_record(contest: dict[str, Any]) -> dict[str, Any]:
+    normalized = deepcopy(contest)
+    normalized["ranking"] = normalized.get("ranking") or ("accuracy" if normalized.get("domain") == "ML" else "score")
+    normalized["participants"] = int(normalized.get("participants") or 0)
+    normalized["duration"] = int(normalized.get("duration") or 90)
+    normalized["problemIds"] = list(normalized.get("problemIds") or [])
+    normalized["prizes"] = [str(prize).strip() for prize in (normalized.get("prizes") or []) if str(prize).strip()]
+    normalized["tags"] = [str(tag).strip() for tag in (normalized.get("tags") or []) if str(tag).strip()]
+    normalized["leaderboard"] = rank_leaderboard(normalized, normalized.get("leaderboard") or [])
+    return normalized
+
+
 class ContestCreate(BaseModel):
     title: str
     domain: str = "DSA"
@@ -206,6 +218,21 @@ class ContestCreate(BaseModel):
     problemIds: list[int | str] = Field(default_factory=list)
     createdBy: str | None = None
     featured: bool = False
+
+
+class ContestUpdate(BaseModel):
+    title: str | None = None
+    domain: str | None = None
+    ranking: str | None = None
+    type: str | None = None
+    description: str | None = None
+    startTime: str | None = None
+    duration: int | None = None
+    prizes: list[str] | None = None
+    tags: list[str] | None = None
+    problemIds: list[int | str] | None = None
+    createdBy: str | None = None
+    featured: bool | None = None
 
 
 class RegistrationRequest(BaseModel):
@@ -233,12 +260,12 @@ app.add_middleware(
 )
 
 _lock = Lock()
-_contests = {contest["id"]: contest for contest in seeded_contests()}
+_contests = {contest["id"]: normalize_contest_record(contest) for contest in seeded_contests()}
 _registrations: dict[str, set[str]] = {}
 
 
 def sorted_contests() -> list[dict[str, Any]]:
-    return sorted(_contests.values(), key=lambda contest: contest["startTime"])
+    return sorted((deepcopy(contest) for contest in _contests.values()), key=lambda contest: contest["startTime"])
 
 
 def copy_contest(contest: dict[str, Any]) -> dict[str, Any]:
@@ -259,134 +286,139 @@ def health() -> dict[str, str]:
 
 @app.get("/contests")
 def list_contests() -> dict[str, list[dict[str, Any]]]:
-    return {"contests": [copy_contest(contest) for contest in sorted_contests()]}
+    return {"contests": sorted_contests()}
 
 
 @app.get("/contests/{contest_id}")
 def get_contest(contest_id: str) -> dict[str, dict[str, Any]]:
-    return {"contest": copy_contest(get_contest_or_404(contest_id))}
+    contest = get_contest_or_404(contest_id)
+    return {"contest": copy_contest(contest)}
 
 
 @app.post("/contests")
-def create_contest(payload: ContestCreate) -> dict[str, dict[str, Any]]:
+def create_contest(payload: ContestCreate) -> dict[str, Any]:
+    contest_id = f"cr-custom-{int(utc_now().timestamp() * 1000)}"
+    contest = normalize_contest_record({
+        "id": contest_id,
+        "title": payload.title,
+        "domain": payload.domain,
+        "ranking": payload.ranking or ("accuracy" if payload.domain == "ML" else "score"),
+        "type": payload.type,
+        "status": "upcoming",
+        "startTime": payload.startTime,
+        "duration": payload.duration,
+        "participants": 0,
+        "problemIds": list(payload.problemIds),
+        "difficulty": "Mixed",
+        "prizes": list(payload.prizes),
+        "tags": list(payload.tags),
+        "createdBy": payload.createdBy or "user",
+        "description": payload.description,
+        "featured": bool(payload.featured),
+        "leaderboard": [],
+    })
+
     with _lock:
-        contest_id = f"cr-custom-{int(datetime.now().timestamp() * 1000)}"
-        contest = {
-            "id": contest_id,
-            "title": payload.title,
-            "domain": payload.domain,
-            "ranking": payload.ranking or ("accuracy" if payload.domain == "ML" else "score"),
-            "type": payload.type,
-            "status": "upcoming",
-            "startTime": payload.startTime,
-            "duration": payload.duration,
-            "participants": 1,
-            "problemIds": list(payload.problemIds),
-            "difficulty": "Custom",
-            "prizes": list(payload.prizes),
-            "tags": list(payload.tags),
-            "createdBy": payload.createdBy or "user",
-            "description": payload.description,
-            "featured": payload.featured,
-            "leaderboard": [],
-        }
         _contests[contest_id] = contest
-        creator = payload.createdBy or "user"
-        _registrations.setdefault(contest_id, set()).add(creator)
-        return {"contest": copy_contest(contest)}
+
+    return {"contest": copy_contest(contest)}
+
+
+@app.put("/contests/{contest_id}")
+def update_contest(contest_id: str, payload: ContestUpdate) -> dict[str, Any]:
+    with _lock:
+        existing = get_contest_or_404(contest_id)
+        updated = normalize_contest_record({
+            **existing,
+            **payload.dict(exclude_unset=True),
+        })
+        _contests[contest_id] = updated
+        return {"contest": copy_contest(updated)}
+
+
+@app.delete("/contests/{contest_id}")
+def delete_contest(contest_id: str) -> dict[str, bool]:
+    with _lock:
+        get_contest_or_404(contest_id)
+        _contests.pop(contest_id, None)
+        _registrations.pop(contest_id, None)
+    return {"ok": True}
 
 
 @app.post("/contests/{contest_id}/register")
-def register_contest(contest_id: str, payload: RegistrationRequest) -> dict[str, dict[str, Any]]:
+def register_contest(contest_id: str, payload: RegistrationRequest) -> dict[str, Any]:
+    contest = get_contest_or_404(contest_id)
+    username = (payload.username or "").strip().lower()
+
     with _lock:
-        contest = get_contest_or_404(contest_id)
-        username = payload.username or "anonymous"
         registrations = _registrations.setdefault(contest_id, set())
-        if username not in registrations:
+        if username:
             registrations.add(username)
-            contest["participants"] = int(contest.get("participants") or 0) + 1
-        return {"contest": copy_contest(contest)}
+        contest["participants"] = max(contest.get("participants") or 0, len(registrations))
+        return {"contest": copy_contest(normalize_contest_record(contest))}
 
 
 @app.post("/contests/{contest_id}/unregister")
-def unregister_contest(contest_id: str, payload: RegistrationRequest) -> dict[str, dict[str, Any]]:
+def unregister_contest(contest_id: str, payload: RegistrationRequest) -> dict[str, Any]:
+    contest = get_contest_or_404(contest_id)
+    username = (payload.username or "").strip().lower()
+
     with _lock:
-        contest = get_contest_or_404(contest_id)
-        username = payload.username or "anonymous"
         registrations = _registrations.setdefault(contest_id, set())
-        if username in registrations:
-            registrations.remove(username)
-            contest["participants"] = max(0, int(contest.get("participants") or 0) - 1)
-        return {"contest": copy_contest(contest)}
+        if username:
+            registrations.discard(username)
+        contest["participants"] = max(len(registrations), 0)
+        return {"contest": copy_contest(normalize_contest_record(contest))}
 
 
 @app.post("/contests/{contest_id}/results")
-def record_result(contest_id: str, payload: ContestResult) -> dict[str, dict[str, Any]]:
+def record_contest_result(contest_id: str, payload: ContestResult) -> dict[str, Any]:
     with _lock:
         contest = get_contest_or_404(contest_id)
-        ranking = contest.get("ranking") or ("accuracy" if contest.get("domain") == "ML" else "score")
         leaderboard = deepcopy(contest.get("leaderboard") or [])
+        ranking = contest.get("ranking") or ("accuracy" if contest.get("domain") == "ML" else "score")
         existing_index = next((index for index, row in enumerate(leaderboard) if row.get("name") == payload.name), -1)
         existing = leaderboard[existing_index] if existing_index >= 0 else None
 
         if ranking == "accuracy":
-            candidate_accuracy = payload.accuracy or 0
-            keep_existing_metric = existing and (existing.get("accuracy") or 0) > candidate_accuracy
-            keep_existing_time = existing and (existing.get("accuracy") or 0) == candidate_accuracy and (existing.get("timeSeconds") or 10**9) <= (payload.timeSeconds or 10**9)
-            next_row = (
-                {**existing, "submissions": max(existing.get("submissions") or 0, payload.submissions or 0)}
-                if keep_existing_metric or keep_existing_time
-                else {
-                    "name": payload.name,
-                    "country": payload.country or (existing.get("country") if existing else "🌍") or "🌍",
-                    "accuracy": candidate_accuracy,
-                    "submissions": payload.submissions or (existing.get("submissions") if existing else 0) or 0,
-                    "time": payload.time,
-                    "timeSeconds": payload.timeSeconds or 0,
-                }
+            candidate_metric = payload.accuracy or 0
+            keep_existing = existing and (
+                (existing.get("accuracy") or 0) > candidate_metric
+                or (
+                    (existing.get("accuracy") or 0) == candidate_metric
+                    and (existing.get("timeSeconds") or 0) <= (payload.timeSeconds or 0)
+                )
             )
+            row = existing if keep_existing else {
+                "name": payload.name,
+                "country": payload.country or "🌍",
+                "accuracy": candidate_metric,
+                "submissions": payload.submissions or 0,
+                "time": payload.time,
+                "timeSeconds": payload.timeSeconds or 0,
+            }
         else:
-            candidate_score = payload.score or 0
-            keep_existing_metric = existing and (existing.get("score") or 0) > candidate_score
-            keep_existing_time = existing and (existing.get("score") or 0) == candidate_score and (existing.get("timeSeconds") or 10**9) <= (payload.timeSeconds or 10**9)
-            next_row = (
-                {**existing, "solved": max(existing.get("solved") or 0, payload.solved or 0)}
-                if keep_existing_metric or keep_existing_time
-                else {
-                    "name": payload.name,
-                    "country": payload.country or (existing.get("country") if existing else "🌍") or "🌍",
-                    "score": candidate_score,
-                    "solved": payload.solved or 0,
-                    "time": payload.time,
-                    "timeSeconds": payload.timeSeconds or 0,
-                }
+            candidate_metric = payload.score or 0
+            keep_existing = existing and (
+                (existing.get("score") or 0) > candidate_metric
+                or (
+                    (existing.get("score") or 0) == candidate_metric
+                    and (existing.get("timeSeconds") or 0) <= (payload.timeSeconds or 0)
+                )
             )
+            row = existing if keep_existing else {
+                "name": payload.name,
+                "country": payload.country or "🌍",
+                "score": candidate_metric,
+                "solved": payload.solved or 0,
+                "time": payload.time,
+                "timeSeconds": payload.timeSeconds or 0,
+            }
 
         if existing_index >= 0:
-            leaderboard[existing_index] = next_row
+            leaderboard[existing_index] = row
         else:
-            leaderboard.append(next_row)
+            leaderboard.append(row)
 
-        ranked = rank_leaderboard(contest, leaderboard)
-        user_row = next((row for row in ranked if row.get("name") == payload.name), None)
-        contest["leaderboard"] = ranked
-        contest["resultsUserName"] = payload.name
-        contest["results"] = (
-            {
-                "userRank": user_row.get("rank") if user_row else None,
-                "userAccuracy": user_row.get("accuracy") if user_row else None,
-                "userSubmissions": user_row.get("submissions") if user_row else None,
-                "userTime": user_row.get("time") if user_row else None,
-                "userTimeSeconds": user_row.get("timeSeconds") if user_row else None,
-            }
-            if ranking == "accuracy"
-            else {
-                "userRank": user_row.get("rank") if user_row else None,
-                "userScore": user_row.get("score") if user_row else None,
-                "userSolved": user_row.get("solved") if user_row else None,
-                "userTime": user_row.get("time") if user_row else None,
-                "userTimeSeconds": user_row.get("timeSeconds") if user_row else None,
-            }
-        )
-
+        contest["leaderboard"] = rank_leaderboard(contest, leaderboard)
         return {"contest": copy_contest(contest)}

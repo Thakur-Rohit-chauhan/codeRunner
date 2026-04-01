@@ -4,7 +4,7 @@ import {
     Trophy, Clock, Users, Calendar, ChevronRight, Zap, Star,
     Flame, Target, Award, TrendingUp, PlayCircle, CheckCircle,
     Timer, Crown, Plus, X, AlertCircle, ChevronDown, Search,
-    Globe, Lock, Swords, Medal, BarChart2, Code2, FileText, Sparkles
+    Globe, Lock, Swords, Medal, BarChart2, Code2, FileText, Sparkles, Pencil, Trash2
 } from 'lucide-react'
 import Navbar from '../components/Navbar/Navbar'
 import useContestStore from '../store/contestStore'
@@ -48,6 +48,14 @@ function useNow(intervalMs = 1000) {
     }, [intervalMs])
 
     return now
+}
+
+function toDateTimeLocalValue(iso) {
+    if (!iso) return ''
+    const date = new Date(iso)
+    if (Number.isNaN(date.getTime())) return ''
+    const offsetMs = date.getTimezoneOffset() * 60000
+    return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16)
 }
 
 // ─── Countdown Display ────────────────────────────────────────────────────────
@@ -208,14 +216,25 @@ function StatCard({ icon, label, value, gradient }) {
 }
 
 // ─── Create Contest Modal ─────────────────────────────────────────────────────
-function CreateContestModal({ onClose, onCreate }) {
+function CreateContestModal({ onClose, onCreate, initialContest = null, submitLabel = 'Create Contest' }) {
     const { addCustomProblem } = useContestStore()
     const allProblems = useProblemStore((state) => state.problems)
-    const [form, setForm] = useState({
-        title: '', domain: 'DSA', type: 'custom', description: '', startTime: '',
-        duration: 90, prizes: ['', '', ''], tags: '', visibility: 'public',
-        selectedProblems: [],
-    })
+    const [form, setForm] = useState(() => ({
+        title: initialContest?.title || '',
+        domain: initialContest?.domain || 'DSA',
+        type: initialContest?.type || 'custom',
+        description: initialContest?.description || '',
+        startTime: toDateTimeLocalValue(initialContest?.startTime),
+        duration: initialContest?.duration || 90,
+        prizes: [
+            initialContest?.prizes?.[0] || '',
+            initialContest?.prizes?.[1] || '',
+            initialContest?.prizes?.[2] || '',
+        ],
+        tags: Array.isArray(initialContest?.tags) ? initialContest.tags.join(', ') : '',
+        visibility: 'public',
+        selectedProblems: initialContest?.problemIds || [],
+    }))
     const [searchQ, setSearchQ] = useState('')
     const [step, setStep] = useState(1)
     const [errors, setErrors] = useState({})
@@ -320,7 +339,7 @@ function CreateContestModal({ onClose, onCreate }) {
                 {/* Header */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
                     <div>
-                        <h2 style={{ fontSize: '22px', fontWeight: 800, color: '#f1f5f9' }}>Create Contest</h2>
+                        <h2 style={{ fontSize: '22px', fontWeight: 800, color: '#f1f5f9' }}>{initialContest ? 'Edit Contest' : 'Create Contest'}</h2>
                         <p style={{ fontSize: '13px', color: '#6b7280', marginTop: '2px' }}>Step {step} of 2 — {step === 1 ? 'Contest Details' : 'Select Problems'}</p>
                     </div>
                     <button onClick={onClose} style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', color: '#9ca3af', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><X size={16} /></button>
@@ -538,7 +557,7 @@ function CreateContestModal({ onClose, onCreate }) {
                                 ← Back
                             </button>
                             <button onClick={handleSubmit} style={{ flex: 2, padding: '13px', borderRadius: '12px', background: 'linear-gradient(135deg,#34d399,#059669)', border: 'none', color: '#0b1a14', fontWeight: 700, fontSize: '15px', cursor: 'pointer', fontFamily: 'inherit', boxShadow: '0 4px 16px rgba(52,211,153,0.25)' }}>
-                                🏆 Create Contest
+                                🏆 {submitLabel}
                             </button>
                         </div>
                     </div>
@@ -555,8 +574,11 @@ export default function Contests() {
     const now = useNow()
     const [tab, setTab] = useState('upcoming')
     const [showCreate, setShowCreate] = useState(false)
+    const [editingContest, setEditingContest] = useState(null)
+    const [pendingDeleteContest, setPendingDeleteContest] = useState(null)
     const [searchQ, setSearchQ] = useState('')
-    const { contests, createContest, registered } = useContestStore()
+    const { contests, createContest, updateContest, deleteContest, registered } = useContestStore()
+    const isAdmin = Boolean(user?.isAdmin)
 
     const contestEntries = useMemo(() =>
         contests.map((contest) => ({
@@ -658,11 +680,56 @@ export default function Contests() {
         return id
     }
 
+    const handleUpdate = async (data) => {
+        if (!editingContest) return null
+        const contest = await updateContest(editingContest.id, data, user?.username)
+        if (contest?.id) {
+            setEditingContest(null)
+        }
+        return contest?.id || editingContest.id
+    }
+
+    const handleDeleteContest = async () => {
+        if (!pendingDeleteContest) return
+        await deleteContest(pendingDeleteContest.id)
+        setPendingDeleteContest(null)
+    }
+
     return (
         <div style={{ minHeight: '100vh', background: 'linear-gradient(135deg,#0b0f19 0%,#0d1520 50%,#0b0f19 100%)', color: '#e5e7eb', fontFamily: '"Inter","Roboto",sans-serif' }}>
             <Navbar />
 
-            {showCreate && <CreateContestModal onClose={() => setShowCreate(false)} onCreate={handleCreate} />}
+            {showCreate && <CreateContestModal onClose={() => setShowCreate(false)} onCreate={handleCreate} submitLabel="Create Contest" />}
+            {editingContest && (
+                <CreateContestModal
+                    onClose={() => setEditingContest(null)}
+                    onCreate={handleUpdate}
+                    initialContest={editingContest}
+                    submitLabel="Save Contest"
+                />
+            )}
+            {pendingDeleteContest && (
+                <div
+                    onMouseDown={(event) => {
+                        if (event.target === event.currentTarget) setPendingDeleteContest(null)
+                    }}
+                    style={{ position: 'fixed', inset: 0, zIndex: 100000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px 16px', background: 'rgba(3, 7, 18, 0.72)', backdropFilter: 'blur(10px)' }}
+                >
+                    <div style={{ width: 'min(92vw, 440px)', borderRadius: '24px', padding: '24px', background: 'linear-gradient(180deg, rgba(21,26,35,0.98) 0%, rgba(12,16,24,0.98) 100%)', border: '1px solid rgba(255,255,255,0.08)', boxShadow: '0 32px 80px rgba(0,0,0,0.45)' }}>
+                        <div style={{ width: '48px', height: '48px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '16px', marginBottom: '18px', background: 'rgba(248,113,113,0.12)', border: '1px solid rgba(248,113,113,0.16)', color: '#fca5a5' }}>
+                            <Trash2 size={20} />
+                        </div>
+                        <h2 style={{ fontSize: '24px', fontWeight: 900, color: '#f8fafc', letterSpacing: '-0.04em', marginBottom: '10px' }}>Delete this contest?</h2>
+                        <p style={{ fontSize: '14px', lineHeight: 1.7, color: '#94a3b8', marginBottom: '22px' }}>
+                            You are about to delete <span style={{ color: '#f8fafc', fontWeight: 700 }}>"{pendingDeleteContest.title}"</span>.
+                        </p>
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', flexWrap: 'wrap' }}>
+                            <button onClick={() => setPendingDeleteContest(null)} style={{ padding: '11px 16px', borderRadius: '14px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: '#cbd5e1', fontSize: '13px', fontWeight: 800 }}>No</button>
+                            <button onClick={handleDeleteContest} style={{ padding: '11px 16px', borderRadius: '14px', background: 'linear-gradient(135deg, rgba(248,113,113,0.18) 0%, rgba(220,38,38,0.18) 100%)', border: '1px solid rgba(248,113,113,0.22)', color: '#fecaca', fontSize: '13px', fontWeight: 800 }}>Yes</button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* ── Hero ── */}
             <div style={{ position: 'relative', overflow: 'hidden', padding: '52px 0 40px', textAlign: 'center' }}>
@@ -688,6 +755,48 @@ export default function Contests() {
 
             {/* ── Main Content ── */}
             <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '0 32px 64px' }}>
+                {isAdmin && (
+                    <div style={{ marginBottom: '28px', borderRadius: '18px', border: '1px solid rgba(255,255,255,0.08)', background: 'linear-gradient(180deg, rgba(20,24,33,0.92) 0%, rgba(12,16,24,0.96) 100%)', padding: '20px 22px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '14px', marginBottom: '16px', flexWrap: 'wrap' }}>
+                            <div>
+                                <h2 style={{ fontSize: '18px', fontWeight: 800, color: '#f8fafc', marginBottom: '6px' }}>Admin Contest Management</h2>
+                                <p style={{ fontSize: '13px', color: '#94a3b8', lineHeight: 1.7 }}>
+                                    Create, edit, and remove contests without leaving the contest workspace.
+                                </p>
+                            </div>
+                            <button onClick={() => setShowCreate(true)} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '9px 16px', borderRadius: '12px', background: 'linear-gradient(135deg,#34d399,#059669)', border: 'none', color: '#0b1a14', fontWeight: 700, fontSize: '13.5px', cursor: 'pointer', fontFamily: 'inherit' }}>
+                                <Plus size={15} />
+                                Create Contest
+                            </button>
+                        </div>
+
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                            {contests.slice().sort((a, b) => new Date(b.startTime) - new Date(a.startTime)).map((contest) => (
+                                <div key={contest.id} style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: '12px', alignItems: 'center', borderRadius: '14px', padding: '14px 16px', background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                                    <div style={{ minWidth: 0 }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '5px' }}>
+                                            <span style={{ fontSize: '14px', fontWeight: 800, color: '#f8fafc' }}>{contest.title}</span>
+                                            <span style={{ fontSize: '10px', color: '#9ca3af', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)', padding: '3px 8px', borderRadius: '999px', letterSpacing: '0.08em', textTransform: 'uppercase' }}>{contest.domain}</span>
+                                        </div>
+                                        <p style={{ fontSize: '12px', color: '#94a3b8' }}>
+                                            {new Date(contest.startTime).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })} · {contest.duration} min · {(contest.problemIds || []).length} problems
+                                        </p>
+                                    </div>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                                        <button onClick={() => setEditingContest(contest)} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '8px 12px', borderRadius: '10px', border: '1px solid rgba(96,165,250,0.22)', background: 'rgba(96,165,250,0.10)', color: '#93c5fd', fontSize: '12px', fontWeight: 800, cursor: 'pointer' }}>
+                                            <Pencil size={13} />
+                                            Edit
+                                        </button>
+                                        <button onClick={() => setPendingDeleteContest(contest)} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '8px 12px', borderRadius: '10px', border: '1px solid rgba(248,113,113,0.22)', background: 'rgba(248,113,113,0.10)', color: '#fca5a5', fontSize: '12px', fontWeight: 800, cursor: 'pointer' }}>
+                                            <Trash2 size={13} />
+                                            Delete
+                                        </button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
 
                 {/* My Stats */}
                 <div style={{ marginBottom: '32px' }}>
@@ -715,9 +824,11 @@ export default function Contests() {
                             <Search style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#6b7280', width: '14px' }} />
                             <input value={searchQ} onChange={e => setSearchQ(e.target.value)} placeholder="Search contests..." style={{ paddingLeft: '36px', paddingRight: '14px', paddingTop: '9px', paddingBottom: '9px', borderRadius: '10px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: '#e5e7eb', fontSize: '13.5px', outline: 'none', width: '220px', fontFamily: 'inherit' }} />
                         </div>
-                        <button onClick={() => setShowCreate(true)} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '9px 18px', borderRadius: '12px', background: 'linear-gradient(135deg,#34d399,#059669)', border: 'none', color: '#0b1a14', fontWeight: 700, fontSize: '13.5px', cursor: 'pointer', fontFamily: 'inherit', boxShadow: '0 4px 16px rgba(52,211,153,0.25)', transition: 'all 0.2s', whiteSpace: 'nowrap' }}>
-                            <Plus size={15} /> Create Contest
-                        </button>
+                        {isAdmin && (
+                            <button onClick={() => setShowCreate(true)} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '9px 18px', borderRadius: '12px', background: 'linear-gradient(135deg,#34d399,#059669)', border: 'none', color: '#0b1a14', fontWeight: 700, fontSize: '13.5px', cursor: 'pointer', fontFamily: 'inherit', boxShadow: '0 4px 16px rgba(52,211,153,0.25)', transition: 'all 0.2s', whiteSpace: 'nowrap' }}>
+                                <Plus size={15} /> Create Contest
+                            </button>
+                        )}
                     </div>
                 </div>
 
@@ -744,9 +855,11 @@ export default function Contests() {
                             <div style={{ textAlign: 'center', padding: '60px 0', color: '#6b7280' }}>
                                 <Trophy size={40} style={{ marginBottom: '12px', opacity: 0.3 }} />
                                 <p style={{ fontSize: '16px' }}>No upcoming contests {searchQ && `matching "${searchQ}"`}</p>
-                                <button onClick={() => setShowCreate(true)} style={{ marginTop: '16px', padding: '10px 20px', borderRadius: '10px', background: 'rgba(52,211,153,0.1)', border: '1px solid rgba(52,211,153,0.2)', color: '#34d399', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
-                                    + Create the first one
-                                </button>
+                                {isAdmin && (
+                                    <button onClick={() => setShowCreate(true)} style={{ marginTop: '16px', padding: '10px 20px', borderRadius: '10px', background: 'rgba(52,211,153,0.1)', border: '1px solid rgba(52,211,153,0.2)', color: '#34d399', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+                                        + Create the first one
+                                    </button>
+                                )}
                             </div>
                         )}
                     </div>

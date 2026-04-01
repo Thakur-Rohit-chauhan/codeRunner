@@ -13,6 +13,9 @@ from pydantic import BaseModel
 
 
 TOKEN_PREFIX = "coderunner."
+DEFAULT_ADMIN_USERNAME = "admin"
+DEFAULT_ADMIN_EMAIL = "admin@gmail.com"
+DEFAULT_ADMIN_PASSWORD = "Admin123"
 
 
 def normalize_username(value: str = "") -> str:
@@ -51,6 +54,10 @@ def build_user_from_seed(username: str, email: str, display_name: str | None = N
         "username": username,
         "email": email,
         "displayName": display_name or username,
+        "role": "user",
+        "isAdmin": False,
+        "isOnline": False,
+        "lastSeenAt": None,
         "avatar": None,
         "rank": rank,
         "rating": rating,
@@ -96,6 +103,10 @@ def default_user() -> dict[str, Any]:
         "username": "coderunner",
         "email": "user@coderunner.dev",
         "displayName": "Code Runner",
+        "role": "user",
+        "isAdmin": False,
+        "isOnline": False,
+        "lastSeenAt": None,
         "avatar": None,
         "rank": "Guardian",
         "rating": 1847,
@@ -133,6 +144,22 @@ def default_user() -> dict[str, Any]:
         "recentAC": True,
         "heatmap": True,
     }
+
+
+def default_admin_user() -> dict[str, Any]:
+    user = build_user_from_seed(DEFAULT_ADMIN_USERNAME, DEFAULT_ADMIN_EMAIL, "Admin")
+    user.update({
+        "rank": "Admin",
+        "role": "admin",
+        "isAdmin": True,
+        "isOnline": False,
+        "lastSeenAt": None,
+    })
+    return user
+
+
+def is_default_admin_username(username: str | None) -> bool:
+    return normalize_username(username or "") == DEFAULT_ADMIN_USERNAME
 
 
 def issue_token(username: str) -> str:
@@ -177,6 +204,7 @@ def copy_user(user: dict[str, Any]) -> dict[str, Any]:
 
 
 def sorted_users() -> list[dict[str, Any]]:
+    ensure_default_admin_account()
     return [copy_user(_users[key]) for key in sorted(_users.keys())]
 
 
@@ -189,6 +217,7 @@ def auth_response(user: dict[str, Any]) -> dict[str, Any]:
 
 
 def find_user(identifier: str) -> dict[str, Any] | None:
+    ensure_default_admin_account()
     key = identifier.strip().lower()
     if not key:
         return None
@@ -199,13 +228,57 @@ def find_user(identifier: str) -> dict[str, Any] | None:
     return None
 
 
+def mark_user_presence(user: dict[str, Any], *, is_online: bool) -> dict[str, Any]:
+    user["isOnline"] = bool(is_online)
+    user["lastSeenAt"] = datetime.now(timezone.utc).isoformat()
+    return user
+
+
 def get_current_user(authorization: str | None) -> dict[str, Any]:
+    ensure_default_admin_account()
     token = extract_bearer_token(authorization)
     username = decode_token(token)
     user = _users.get(username)
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
     return user
+
+
+def require_admin(authorization: str | None) -> dict[str, Any]:
+    user = get_current_user(authorization)
+    if not user.get("isAdmin"):
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return user
+
+
+def count_admins() -> int:
+    return sum(1 for user in _users.values() if user.get("isAdmin"))
+
+
+def ensure_default_admin_account() -> None:
+    admin_defaults = default_admin_user()
+    existing_admin = _users.get(DEFAULT_ADMIN_USERNAME)
+
+    if existing_admin:
+        preserved_fields = {
+            key: value
+            for key, value in existing_admin.items()
+            if key not in {"username", "email", "displayName", "role", "isAdmin", "rank"}
+        }
+        _users[DEFAULT_ADMIN_USERNAME] = {
+            **admin_defaults,
+            **preserved_fields,
+            "username": DEFAULT_ADMIN_USERNAME,
+            "email": DEFAULT_ADMIN_EMAIL,
+            "displayName": "Admin",
+            "role": "admin",
+            "isAdmin": True,
+            "rank": "Admin",
+        }
+    else:
+        _users[DEFAULT_ADMIN_USERNAME] = admin_defaults
+
+    _passwords[DEFAULT_ADMIN_USERNAME] = DEFAULT_ADMIN_PASSWORD
 
 
 class RegisterRequest(BaseModel):
@@ -227,6 +300,10 @@ class SocialLoginRequest(BaseModel):
     provider: str = "google"
 
 
+class UserAdminUpdateRequest(BaseModel):
+    isAdmin: bool
+
+
 app = FastAPI(title="Auth Service", version="0.1.0")
 app.add_middleware(
     CORSMiddleware,
@@ -239,14 +316,17 @@ app.add_middleware(
 _lock = Lock()
 _users: dict[str, dict[str, Any]] = {
     "coderunner": default_user(),
+    "admin": default_admin_user(),
 }
 _passwords: dict[str, str] = {
     "coderunner": "password123",
+    "admin": DEFAULT_ADMIN_PASSWORD,
 }
 
 
 @app.get("/health")
 def health() -> dict[str, str]:
+    ensure_default_admin_account()
     return {"status": "ok"}
 
 
@@ -274,6 +354,7 @@ def register(payload: RegisterRequest) -> dict[str, Any]:
             raise HTTPException(status_code=409, detail="Email already exists")
 
         user = build_user_from_seed(username, email, payload.displayName or username)
+        mark_user_presence(user, is_online=True)
         _users[username] = user
         _passwords[username] = payload.password
         return auth_response(user)
@@ -289,7 +370,9 @@ def login(payload: LoginRequest) -> dict[str, Any]:
     if _passwords.get(username) != payload.password:
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    return auth_response(user)
+    with _lock:
+        mark_user_presence(user, is_online=True)
+        return auth_response(user)
 
 
 @app.post("/auth/social-login")
@@ -313,12 +396,21 @@ def social_login(payload: SocialLoginRequest) -> dict[str, Any]:
         elif payload.displayName:
             user["displayName"] = payload.displayName
 
+        mark_user_presence(user, is_online=True)
         return auth_response(user)
 
 
 @app.get("/auth/me")
 def me(authorization: str | None = Header(default=None)) -> dict[str, dict[str, Any]]:
     return {"user": copy_user(get_current_user(authorization))}
+
+
+@app.post("/auth/logout")
+def logout(authorization: str | None = Header(default=None)) -> dict[str, bool]:
+    user = get_current_user(authorization)
+    with _lock:
+        mark_user_presence(user, is_online=False)
+    return {"ok": True}
 
 
 @app.patch("/auth/me")
@@ -352,3 +444,62 @@ def update_me(payload: dict[str, Any], authorization: str | None = Header(defaul
     with _lock:
         user.update(updates)
         return {"user": copy_user(user)}
+
+
+@app.patch("/auth/users/{username}")
+def update_user_admin_status(
+    username: str,
+    payload: UserAdminUpdateRequest,
+    authorization: str | None = Header(default=None),
+) -> dict[str, Any]:
+    admin = require_admin(authorization)
+    normalized_username = normalize_username(username)
+
+    with _lock:
+        ensure_default_admin_account()
+        user = _users.get(normalized_username)
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        if is_default_admin_username(normalized_username):
+            raise HTTPException(status_code=400, detail="The default admin cannot be modified")
+
+        if normalized_username == normalize_username(admin["username"]) and not payload.isAdmin:
+            raise HTTPException(status_code=400, detail="You cannot remove your own admin access")
+
+        if user.get("isAdmin") and not payload.isAdmin and count_admins() <= 1:
+            raise HTTPException(status_code=400, detail="At least one admin must remain in the system")
+
+        user["isAdmin"] = bool(payload.isAdmin)
+        user["role"] = "admin" if user["isAdmin"] else "user"
+
+        return {
+            "user": copy_user(user),
+            "users": sorted_users(),
+        }
+
+
+@app.delete("/auth/users/{username}")
+def delete_user(username: str, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    admin = require_admin(authorization)
+    normalized_username = normalize_username(username)
+
+    with _lock:
+        ensure_default_admin_account()
+        if normalized_username == normalize_username(admin["username"]):
+            raise HTTPException(status_code=400, detail="You cannot delete your own account")
+
+        if is_default_admin_username(normalized_username):
+            raise HTTPException(status_code=400, detail="The default admin cannot be deleted")
+
+        user = _users.get(normalized_username)
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        if user.get("isAdmin") and count_admins() <= 1:
+            raise HTTPException(status_code=400, detail="At least one admin must remain in the system")
+
+        _users.pop(normalized_username, None)
+        _passwords.pop(normalized_username, None)
+
+        return {"ok": True, "users": sorted_users()}
