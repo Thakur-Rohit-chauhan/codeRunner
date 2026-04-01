@@ -1,131 +1,307 @@
-version: '3.8'
+# ===================================================
+# Universal Contest Platform - Docker Compose
+# ===================================================
+# Phase 1: PostgreSQL + NGINX + Problem Service
+# Phase 2: RabbitMQ + Submission Service
+# Phase 3: gRPC on Problem Service
+# Phase 4: Judge-Standard Consumer Worker
+# Phase 5: Redis + Contest Service (Leaderboards)
+# Frontend-by-AR additions: auth-service support and
+# host port mappings aligned with the current frontend.
+# ===================================================
 
 services:
-  # API Gateway
-  api-gateway:
-    build:
-      context: ./services/api-gateway
-    ports:
-      - "80:80"
-      - "443:443"
-    depends_on:
-      - auth-service
-      - contest-service
-      - problem-service
-      - submission-service
 
+  # ---------------------------------------------------
+  # Shared PostgreSQL Database
+  # ---------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: platform-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-problem_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-secure_password_change_me}
+      POSTGRES_DB: ${POSTGRES_DB:-problems_db}
+      SUBMISSION_POSTGRES_USER: ${SUBMISSION_POSTGRES_USER:-submission_user}
+      SUBMISSION_POSTGRES_PASSWORD: ${SUBMISSION_POSTGRES_PASSWORD:-secure_password_change_me}
+      SUBMISSION_POSTGRES_DB: ${SUBMISSION_POSTGRES_DB:-submissions_db}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infrastructure/postgres/init:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-problem_user}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - platform-network
+
+  # ---------------------------------------------------
+  # Auth Service Database
+  # ---------------------------------------------------
+  auth-db:
+    image: postgres:15
+    container_name: platform-auth-db
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: authdb
+    volumes:
+      - auth_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - platform-network
+
+  # ---------------------------------------------------
   # Auth Service
+  # ---------------------------------------------------
   auth-service:
     build:
       context: ./services/auth-service
+    container_name: platform-auth-service
+    environment:
+      DATABASE_URL: ${AUTH_DATABASE_URL:-postgresql://user:password@auth-db:5432/authdb}
     ports:
       - "8000:8000"
-    environment:
-      - DATABASE_URL=postgresql://user:password@auth-db:5432/authdb
     depends_on:
-      - auth-db
+      auth-db:
+        condition: service_healthy
+    networks:
+      - platform-network
+    restart: unless-stopped
 
-  # Contest Service
-  contest-service:
-    build:
-      context: ./services/contest-service
-    ports:
-      - "8002:8000"
-    environment:
-      - DATABASE_URL=postgresql://user:password@contest-db:5432/contestdb
-    depends_on:
-      - contest-db
-
-  # Problem Service
+  # ---------------------------------------------------
+  # Problem Service (FastAPI + gRPC)
+  # ---------------------------------------------------
   problem-service:
     build:
       context: ./services/problem-service
-    ports:
-      - "8001:8000"
+      dockerfile: Dockerfile
+    container_name: platform-problem-service
     environment:
-      - DATABASE_URL=postgresql://user:password@problem-db:5432/problemdb
-      - SUBMISSION_SERVICE_URL=http://submission-service:8000
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://problem_user:secure_password_change_me@postgres:5432/problems_db}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      SERVICE_NAME: problem-service
+      SERVICE_PORT: "8001"
+      GRPC_PORT: "${GRPC_PORT:-50051}"
+      SUBMISSION_SERVICE_URL: http://submission-service:8002
+    ports:
+      - "8001:8001"
+      - "50051:50051"
     depends_on:
-      - problem-db
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    networks:
+      - platform-network
+    restart: unless-stopped
+
+  # ---------------------------------------------------
+  # NGINX API Gateway
+  # ---------------------------------------------------
+  nginx:
+    image: nginx:alpine
+    container_name: platform-gateway
+    volumes:
+      - ./infrastructure/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "80:80"
+    depends_on:
+      - auth-service
+      - problem-service
       - submission-service
+      - contest-service
+    networks:
+      - platform-network
+    restart: unless-stopped
 
-  # Judge Services
-  judge-standard:
-    build:
-      context: ./services/judge-standard
-    ports:
-      - "8004:8000"
-
-  judge-cyber:
-    build:
-      context: ./services/judge-cyber
-    ports:
-      - "8005:8000"
-
-  judge-ml:
-    build:
-      context: ./services/judge-ml
-    ports:
-      - "8006:8000"
-
-  # Frontend
-  frontend:
-    build:
-      context: ./services/frontend
-    ports:
-      - "3000:3000"
-    depends_on:
-      - api-gateway
-    
-  submission-service:
-    build: ./services/submission-service
-    ports:
-      - "8003:8000"
-    depends_on:
-      - db
-      - rabbitmq
-    env_file:
-      - ./services/submission-service/.env
-
-  # Databases (stub - replace with actual configs)
-  auth-db:
-    image: postgres:15
-    environment:
-      - POSTGRES_USER=user
-      - POSTGRES_PASSWORD=password
-      - POSTGRES_DB=authdb
-    volumes:
-      - auth-db-data:/var/lib/postgresql/data
-
-  contest-db:
-    image: postgres:15
-    environment:
-      - POSTGRES_USER=user
-      - POSTGRES_PASSWORD=password
-      - POSTGRES_DB=contestdb
-    volumes:
-      - contest-db-data:/var/lib/postgresql/data
-
-  problem-db:
-    image: postgres:15
-    environment:
-      - POSTGRES_USER=user
-      - POSTGRES_PASSWORD=password
-      - POSTGRES_DB=problemdb
-    volumes:
-      - problem-db-data:/var/lib/postgresql/data
-
-  # Message Queue
+  # ---------------------------------------------------
+  # RabbitMQ Message Broker
+  # ---------------------------------------------------
   rabbitmq:
-    image: rabbitmq:3-management
+    image: rabbitmq:3.13-management-alpine
+    container_name: platform-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-guest}
+      RABBITMQ_DEFAULT_VHOST: /
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
     ports:
       - "5672:5672"
       - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - platform-network
+    restart: unless-stopped
+
+  # ---------------------------------------------------
+  # Submission Service
+  # ---------------------------------------------------
+  submission-service:
+    build:
+      context: ./services/submission-service
+      dockerfile: Dockerfile
+    container_name: platform-submission-service
     environment:
-      - RABBITMQ_DEFAULT_USER=admin
-      - RABBITMQ_DEFAULT_PASS=admin
+      DATABASE_URL: ${SUBMISSION_DATABASE_URL:-postgresql+asyncpg://submission_user:secure_password_change_me@postgres:5432/submissions_db}
+      RABBITMQ_URL: ${RABBITMQ_URL:-amqp://guest:guest@rabbitmq:5672/}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      SERVICE_NAME: submission-service
+      SERVICE_PORT: "8002"
+      PROBLEM_SERVICE_URL: http://problem-service:8001
+    ports:
+      - "8003:8002"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      problem-service:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    networks:
+      - platform-network
+    restart: unless-stopped
+
+  # ---------------------------------------------------
+  # Judge-Standard Consumer Worker
+  # ---------------------------------------------------
+  judge-standard:
+    build:
+      context: ./services/judge-standard
+      dockerfile: Dockerfile
+    container_name: platform-judge-standard
+    environment:
+      DATABASE_URL: ${SUBMISSION_DATABASE_URL:-postgresql+asyncpg://submission_user:secure_password_change_me@postgres:5432/submissions_db}
+      RABBITMQ_URL: ${RABBITMQ_URL:-amqp://guest:guest@rabbitmq:5672/}
+      PROBLEM_SERVICE_GRPC: problem-service:50051
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      SERVICE_NAME: judge-standard
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      problem-service:
+        condition: service_healthy
+    networks:
+      - platform-network
+    restart: unless-stopped
+
+  # ---------------------------------------------------
+  # Redis (Real-Time Leaderboards)
+  # ---------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: platform-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - platform-network
+    restart: unless-stopped
+
+  # ---------------------------------------------------
+  # Contest Service
+  # ---------------------------------------------------
+  contest-service:
+    build:
+      context: ./services/contest-service
+      dockerfile: Dockerfile
+    container_name: platform-contest-service
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://problem_user:secure_password_change_me@postgres:5432/problems_db}
+      REDIS_URL: ${REDIS_URL:-redis://:@redis:6379/0}
+      RABBITMQ_URL: ${RABBITMQ_URL:-amqp://guest:guest@rabbitmq:5672/}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      SERVICE_NAME: contest-service
+      SERVICE_PORT: "8003"
+    ports:
+      - "8002:8003"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8003/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    networks:
+      - platform-network
+    restart: unless-stopped
+
+  # ---------------------------------------------------
+  # Judge-ML Consumer Worker
+  # ---------------------------------------------------
+  judge-ml:
+    build:
+      context: ./services/judge-ml
+      dockerfile: Dockerfile
+    container_name: platform-judge-ml
+    environment:
+      DATABASE_URL: ${SUBMISSION_DATABASE_URL:-postgresql+asyncpg://submission_user:secure_password_change_me@postgres:5432/submissions_db}
+      RABBITMQ_URL: ${RABBITMQ_URL:-amqp://guest:guest@rabbitmq:5672/}
+      PROBLEM_SERVICE_GRPC: problem-service:50051
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      SERVICE_NAME: judge-ml
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      problem-service:
+        condition: service_healthy
+    networks:
+      - platform-network
+    restart: unless-stopped
 
 volumes:
-  auth-db-data:
-  contest-db-data:
-  problem-db-data:
+  postgres_data:
+    driver: local
+  auth_db_data:
+    driver: local
+  rabbitmq_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  platform-network:
+    driver: bridge
