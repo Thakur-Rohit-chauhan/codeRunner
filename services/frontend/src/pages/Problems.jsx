@@ -310,7 +310,18 @@ export default function Problems() {
     }, [domainProblems, search, activeSort, sortDirection, filters, matchStrategy])
 
     const totalPages = Math.ceil(filtered.length / perPage)
+    const safeTotalPages = Math.max(1, totalPages)
     const paginated = filtered.slice((page - 1) * perPage, page * perPage)
+
+    useEffect(() => {
+        setPage(1)
+    }, [urlDomain])
+
+    useEffect(() => {
+        if (page > safeTotalPages) {
+            setPage(safeTotalPages)
+        }
+    }, [page, safeTotalPages])
 
     const handleToggleBookmark = async (event, problemId) => {
         event.preventDefault()
@@ -781,15 +792,15 @@ export default function Problems() {
                             ))}
                         </div>
                         <button
-                            onClick={() => setPage(Math.min(totalPages, page + 1))}
-                            disabled={page === totalPages}
+                            onClick={() => setPage(Math.min(safeTotalPages, page + 1))}
+                            disabled={page === safeTotalPages}
                             style={{
                                 padding: '8px', borderRadius: '10px', color: '#8d96a0',
-                                background: 'transparent', border: '1px solid rgba(255,255,255,0.05)', cursor: page === totalPages ? 'default' : 'pointer',
-                                opacity: page === totalPages ? 0.3 : 1, transition: 'all 0.2s'
+                                background: 'transparent', border: '1px solid rgba(255,255,255,0.05)', cursor: page === safeTotalPages ? 'default' : 'pointer',
+                                opacity: page === safeTotalPages ? 0.3 : 1, transition: 'all 0.2s'
                             }}
-                            onMouseEnter={(e) => { if (page !== totalPages) e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)' }}
-                            onMouseLeave={(e) => { if (page !== totalPages) e.currentTarget.style.backgroundColor = 'transparent' }}
+                            onMouseEnter={(e) => { if (page !== safeTotalPages) e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)' }}
+                            onMouseLeave={(e) => { if (page !== safeTotalPages) e.currentTarget.style.backgroundColor = 'transparent' }}
                         >
                             <ChevronRight style={{ width: '18px', height: '18px' }} />
                         </button>
