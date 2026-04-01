@@ -12,13 +12,14 @@ services:
       - auth-service
       - contest-service
       - problem-service
+      - submission-service
 
   # Auth Service
   auth-service:
     build:
       context: ./services/auth-service
     ports:
-      - "8001:8000"
+      - "8000:8000"
     environment:
       - DATABASE_URL=postgresql://user:password@auth-db:5432/authdb
     depends_on:
@@ -40,11 +41,13 @@ services:
     build:
       context: ./services/problem-service
     ports:
-      - "8003:8000"
+      - "8001:8000"
     environment:
       - DATABASE_URL=postgresql://user:password@problem-db:5432/problemdb
+      - SUBMISSION_SERVICE_URL=http://submission-service:8000
     depends_on:
       - problem-db
+      - submission-service
 
   # Judge Services
   judge-standard:
@@ -77,7 +80,7 @@ services:
   submission-service:
     build: ./services/submission-service
     ports:
-      - "8007:8000"  # Map host port 8007 to container port 8000
+      - "8003:8000"
     depends_on:
       - db
       - rabbitmq

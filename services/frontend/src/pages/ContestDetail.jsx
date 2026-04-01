@@ -6,13 +6,22 @@ import {
     Tag, BarChart2, Award, AlertCircle, Shield, ExternalLink, ChevronRight
 } from 'lucide-react'
 import Navbar from '../components/Navbar/Navbar'
+import useAuthStore from '../store/authStore'
 import useContestStore from '../store/contestStore'
+import {
+    getContestPhase,
+    getContestStatusLabel,
+    getContestUserStats,
+    isAccuracyContest,
+} from '../utils/contestUtils'
 
 function useCountdown(isoDate) {
     const [t, setT] = useState({})
     useEffect(() => {
         const calc = () => {
-            const diff = new Date(isoDate) - Date.now()
+            const target = new Date(isoDate).getTime()
+            if (!isoDate || Number.isNaN(target)) return setT({ d: 0, h: 0, m: 0, s: 0, over: true })
+            const diff = target - Date.now()
             if (diff <= 0) return setT({ d: 0, h: 0, m: 0, s: 0, over: true })
             setT({ d: Math.floor(diff / 86400000), h: Math.floor((diff % 86400000) / 3600000), m: Math.floor((diff % 3600000) / 60000), s: Math.floor((diff % 60000) / 1000) })
         }
@@ -35,11 +44,11 @@ function formatAccuracy(value) {
 export default function ContestDetail() {
     const { contestId } = useParams()
     const navigate = useNavigate()
+    const user = useAuthStore((state) => state.user)
     const { getContest, getLeaderboard, isRegistered, registerContest, unregisterContest, startAttempt, getProblemsForContest } = useContestStore()
     const contest = getContest(contestId)
     const reg = isRegistered(contestId)
     const cd = useCountdown(contest?.startTime)
-    const isLive = cd.over
     const [activeTab, setActiveTab] = useState('overview')
     const [hoveredProblem, setHoveredProblem] = useState(null)
     const [hoveredRow, setHoveredRow] = useState(null)
@@ -57,7 +66,12 @@ export default function ContestDetail() {
     const problems = getProblemsForContest(contest)
     const leaderboard = getLeaderboard(contestId)
     const meta = typeMeta[contest.type] || typeMeta.weekly
-    const isMlContest = contest.ranking === 'accuracy' || contest.domain === 'ML'
+    const contestPhase = getContestPhase(contest)
+    const isLive = contestPhase === 'active'
+    const isPast = contestPhase === 'past'
+    const statusLabel = getContestStatusLabel(contest)
+    const isMlContest = isAccuracyContest(contest)
+    const currentUserStats = getContestUserStats(contest, user?.username)
 
     const handleAttempt = () => {
         startAttempt(contestId)
@@ -84,8 +98,8 @@ export default function ContestDetail() {
                                     {contest.domain || 'DSA'}
                                 </span>
                                 {contest.featured && <span style={{ fontSize: '12px', fontWeight: 700, color: '#f59e0b', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.2)', padding: '4px 12px', borderRadius: '20px', display: 'flex', alignItems: 'center', gap: '4px' }}><Flame size={11} /> Featured</span>}
-                                <span style={{ fontSize: '12px', fontWeight: 600, color: contest.status === 'past' ? '#6b7280' : isLive ? '#ef4444' : '#34d399', background: contest.status === 'past' ? 'rgba(107,114,128,0.1)' : isLive ? 'rgba(239,68,68,0.1)' : 'rgba(52,211,153,0.1)', border: `1px solid ${contest.status === 'past' ? 'rgba(107,114,128,0.2)' : isLive ? 'rgba(239,68,68,0.3)' : 'rgba(52,211,153,0.2)'}`, padding: '4px 12px', borderRadius: '20px', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-                                    {contest.status === 'past' ? 'Ended' : isLive ? '🔴 Live Now' : 'Upcoming'}
+                                <span style={{ fontSize: '12px', fontWeight: 600, color: isPast ? '#6b7280' : isLive ? '#ef4444' : '#34d399', background: isPast ? 'rgba(107,114,128,0.1)' : isLive ? 'rgba(239,68,68,0.1)' : 'rgba(52,211,153,0.1)', border: `1px solid ${isPast ? 'rgba(107,114,128,0.2)' : isLive ? 'rgba(239,68,68,0.3)' : 'rgba(52,211,153,0.2)'}`, padding: '4px 12px', borderRadius: '20px', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                                    {statusLabel}
                                 </span>
                             </div>
                             <h1 style={{ fontSize: '32px', fontWeight: 800, color: '#f1f5f9', marginBottom: '10px', letterSpacing: '-0.02em', lineHeight: 1.2 }}>{contest.title}</h1>
@@ -107,7 +121,7 @@ export default function ContestDetail() {
 
                         {/* Right: CTA box */}
                         <div style={{ width: '300px', flexShrink: 0, borderRadius: '20px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', padding: '24px', backdropFilter: 'blur(20px)' }}>
-                            {contest.status !== 'past' && !isLive && (
+                            {!isPast && !isLive && (
                                 <>
                                     <p style={{ fontSize: '11px', color: '#6b7280', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '12px' }}>Starts In</p>
                                     <div style={{ display: 'flex', gap: '8px', marginBottom: '20px' }}>
@@ -133,19 +147,26 @@ export default function ContestDetail() {
                                 </div>
                             )}
 
-                            {contest.status === 'past' ? (
+                            {isPast ? (
                                 <div style={{ padding: '14px', borderRadius: '12px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', textAlign: 'center', color: '#6b7280', fontSize: '14px' }}>
                                     <Trophy size={20} style={{ marginBottom: '8px', color: '#fbbf24' }} />
                                     <p>Contest ended</p>
-                                    {contest.results?.userRank && <p style={{ fontSize: '20px', fontWeight: 700, color: '#34d399', marginTop: '4px' }}>Your rank: #{contest.results.userRank}</p>}
-                                    {isMlContest && contest.results?.userAccuracy && <p style={{ fontSize: '14px', color: '#9ca3af', marginTop: '6px' }}>Best accuracy: {formatAccuracy(contest.results.userAccuracy)}</p>}
+                                    {currentUserStats.rank && <p style={{ fontSize: '20px', fontWeight: 700, color: '#34d399', marginTop: '4px' }}>Your rank: #{currentUserStats.rank}</p>}
+                                    {isMlContest && typeof currentUserStats.accuracy === 'number' && <p style={{ fontSize: '14px', color: '#9ca3af', marginTop: '6px' }}>Best accuracy: {formatAccuracy(currentUserStats.accuracy)}</p>}
+                                    {!isMlContest && typeof currentUserStats.score === 'number' && <p style={{ fontSize: '14px', color: '#9ca3af', marginTop: '6px' }}>Best score: {currentUserStats.score.toLocaleString()}</p>}
                                 </div>
                             ) : isLive ? (
-                                reg && <button onClick={handleAttempt} style={{ width: '100%', padding: '14px', borderRadius: '13px', background: 'linear-gradient(135deg,#ef4444,#b91c1c)', border: 'none', color: '#fff', fontWeight: 800, fontSize: '15px', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', boxShadow: '0 4px 20px rgba(239,68,68,0.35)', letterSpacing: '0.03em' }}>
-                                    <Swords size={18} /> Enter Arena Now
-                                </button>
+                                reg ? (
+                                    <button onClick={handleAttempt} style={{ width: '100%', padding: '14px', borderRadius: '13px', background: 'linear-gradient(135deg,#ef4444,#b91c1c)', border: 'none', color: '#fff', fontWeight: 800, fontSize: '15px', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', boxShadow: '0 4px 20px rgba(239,68,68,0.35)', letterSpacing: '0.03em' }}>
+                                        <Swords size={18} /> Enter Arena Now
+                                    </button>
+                                ) : (
+                                    <button onClick={() => registerContest(contestId, user?.username)} style={{ width: '100%', padding: '14px', borderRadius: '13px', background: 'linear-gradient(135deg,#34d399,#059669)', border: 'none', color: '#0b1a14', fontWeight: 700, fontSize: '15px', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', boxShadow: '0 4px 20px rgba(52,211,153,0.25)', transition: 'all 0.25s' }}>
+                                        <PlayCircle size={17} /> Register Now
+                                    </button>
+                                )
                             ) : (
-                                <button onClick={() => reg ? unregisterContest(contestId) : registerContest(contestId)} style={{ width: '100%', padding: '14px', borderRadius: '13px', background: reg ? 'rgba(52,211,153,0.08)' : 'linear-gradient(135deg,#34d399,#059669)', border: reg ? '1px solid rgba(52,211,153,0.3)' : 'none', color: reg ? '#34d399' : '#0b1a14', fontWeight: 700, fontSize: '15px', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', boxShadow: !reg ? '0 4px 20px rgba(52,211,153,0.25)' : 'none', transition: 'all 0.25s' }}>
+                                <button onClick={() => reg ? unregisterContest(contestId, user?.username) : registerContest(contestId, user?.username)} style={{ width: '100%', padding: '14px', borderRadius: '13px', background: reg ? 'rgba(52,211,153,0.08)' : 'linear-gradient(135deg,#34d399,#059669)', border: reg ? '1px solid rgba(52,211,153,0.3)' : 'none', color: reg ? '#34d399' : '#0b1a14', fontWeight: 700, fontSize: '15px', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', boxShadow: !reg ? '0 4px 20px rgba(52,211,153,0.25)' : 'none', transition: 'all 0.25s' }}>
                                     {reg ? <><CheckCircle size={17} /> Registered</> : <><PlayCircle size={17} /> Register Now</>}
                                 </button>
                             )}
@@ -158,7 +179,7 @@ export default function ContestDetail() {
             <div style={{ maxWidth: '1100px', margin: '0 auto', padding: '0 32px' }}>
                 {/* Only show Problems + Leaderboard tabs when the contest is live or finished */}
                 <div style={{ display: 'flex', gap: '0', borderBottom: '1px solid rgba(255,255,255,0.06)', marginBottom: '32px' }}>
-                    {(['overview', ...(isLive || contest.status === 'past' ? ['problems', 'leaderboard'] : [])]).map(t => (
+                    {(['overview', ...(isLive || isPast ? ['problems', 'leaderboard'] : [])]).map(t => (
                         <button key={t} onClick={() => setActiveTab(t)} style={{ padding: '14px 22px', fontSize: '14px', fontWeight: 600, cursor: 'pointer', background: 'none', border: 'none', fontFamily: 'inherit', color: activeTab === t ? '#34d399' : '#6b7280', borderBottom: `2px solid ${activeTab === t ? '#34d399' : 'transparent'}`, transition: 'all 0.2s', textTransform: 'capitalize', letterSpacing: '0.02em' }}>
                             {t}
                         </button>
@@ -175,9 +196,10 @@ export default function ContestDetail() {
                                 <ul style={{ marginTop: '16px', paddingLeft: '20px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                                     <li>Duration: <strong style={{ color: '#e5e7eb' }}>{contest.duration} minutes</strong></li>
                                     <li>Problems: <strong style={{ color: '#e5e7eb' }}>{problems.length}</strong></li>
-                                    <li>Type: <strong style={{ color: '#e5e7eb', textTransform: 'capitalize' }}>{contest.type}</strong></li>
-                                    <li>Scoring: <strong style={{ color: '#e5e7eb' }}>{isMlContest ? 'Highest achieved accuracy decides rank' : 'Points awarded based on correctness and time'}</strong></li>
-                                    <li>{isMlContest ? 'Tie-breaker: Earlier best-scoring submission wins' : 'Penalty: 10 minutes per wrong submission'}</li>
+                                    <li>Type: <strong style={{ color: '#e5e7eb', textTransform: 'capitalize' }}>{meta.label}</strong></li>
+                                    <li>Ranking: <strong style={{ color: '#e5e7eb' }}>{isMlContest ? 'Highest achieved accuracy' : 'Highest score'}</strong></li>
+                                    <li>Tie-breaker: <strong style={{ color: '#e5e7eb' }}>{isMlContest ? 'Earlier best-scoring submission time' : 'Faster finishing time'}</strong></li>
+                                    <li>Access: <strong style={{ color: '#e5e7eb' }}>{isPast ? 'Problems and leaderboard are archived for review' : isLive ? 'Problems and leaderboard are unlocked right now' : 'Problems and leaderboard unlock at contest start'}</strong></li>
                                 </ul>
                             </div>
 
@@ -191,14 +213,14 @@ export default function ContestDetail() {
                             )}
 
                             {/* Upcoming-only: locked notice */}
-                            {!isLive && contest.status !== 'past' && (
+                            {!isLive && !isPast && (
                                 <div style={{ marginTop: '24px', borderRadius: '16px', background: 'rgba(52,211,153,0.03)', border: '1px solid rgba(52,211,153,0.12)', padding: '20px 24px', display: 'flex', alignItems: 'flex-start', gap: '14px' }}>
                                     <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'rgba(52,211,153,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                                         <Shield size={18} style={{ color: '#34d399' }} />
                                     </div>
                                     <div>
                                         <p style={{ fontSize: '14px', fontWeight: 700, color: '#34d399', marginBottom: '4px' }}>Problems & Leaderboard Locked</p>
-                                        <p style={{ fontSize: '13px', color: '#6b7280', lineHeight: 1.6 }}>Problem details and the leaderboard will be revealed once the contest goes live. Register now to get notified!</p>
+                                        <p style={{ fontSize: '13px', color: '#6b7280', lineHeight: 1.6 }}>Problem details and the leaderboard will be revealed once the contest goes live. Register now to keep it in your contest list.</p>
                                     </div>
                                 </div>
                             )}
@@ -211,8 +233,8 @@ export default function ContestDetail() {
                                     <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 16px', borderRadius: '12px', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)' }}>
                                         <span style={{ width: '24px', height: '24px', borderRadius: '8px', background: 'rgba(52,211,153,0.1)', border: '1px solid rgba(52,211,153,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: 700, color: '#34d399', flexShrink: 0 }}>{String.fromCharCode(65 + i)}</span>
                                         {/* Hide title until live or finished */}
-                                        <span style={{ flex: 1, fontSize: '14px', color: isLive || contest.status === 'past' || p.isCustom ? '#e5e7eb' : '#6b7280', fontWeight: 500, fontStyle: isLive || contest.status === 'past' || p.isCustom ? 'normal' : 'italic' }}>
-                                            {isLive || contest.status === 'past' || p.isCustom ? p.title : `Problem ${String.fromCharCode(65 + i)} — Hidden`}
+                                        <span style={{ flex: 1, fontSize: '14px', color: isLive || isPast || p.isCustom ? '#e5e7eb' : '#6b7280', fontWeight: 500, fontStyle: isLive || isPast || p.isCustom ? 'normal' : 'italic' }}>
+                                            {isLive || isPast || p.isCustom ? p.title : `Problem ${String.fromCharCode(65 + i)} — Hidden`}
                                         </span>
                                         <span style={{ fontSize: '12px', fontWeight: 600, color: p.difficulty === 'Easy' ? '#34d399' : p.difficulty === 'Medium' ? '#fbbf24' : '#f87171' }}>{p.difficulty}</span>
                                     </div>
@@ -237,7 +259,7 @@ export default function ContestDetail() {
                                     <span style={{ width: '32px', height: '32px', borderRadius: '10px', background: 'rgba(52,211,153,0.1)', border: '1px solid rgba(52,211,153,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', fontWeight: 800, color: '#34d399', flexShrink: 0 }}>{String.fromCharCode(65 + i)}</span>
                                     <div style={{ flex: 1 }}>
                                         <p style={{ fontSize: '15px', fontWeight: 600, color: hoveredProblem === p.id ? '#34d399' : '#e5e7eb', marginBottom: '4px', transition: 'color 0.2s' }}>
-                                            {contest.status === 'past' || p.isCustom ? p.title : `Problem ${String.fromCharCode(65 + i)}`}
+                                            {isPast || p.isCustom ? p.title : `Problem ${String.fromCharCode(65 + i)}`}
                                         </p>
                                         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                                             {p.tags?.slice(0, 3).map(t => <span key={t} style={{ fontSize: '11px', color: '#6b7280', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)', padding: '2px 8px', borderRadius: '6px' }}>{t}</span>)}
@@ -249,14 +271,20 @@ export default function ContestDetail() {
                                 </div>
                             ))}
                         </div>
-                        {(reg || contest.status === 'past') && (
+                        {(reg || isPast || isLive) && (
                             <div style={{ marginTop: '24px', textAlign: 'center' }}>
                                 {isLive ? (
-                                    <button onClick={handleAttempt} style={{ padding: '14px 36px', borderRadius: '14px', background: 'linear-gradient(135deg,#ef4444,#b91c1c)', border: 'none', color: '#fff', fontWeight: 800, fontSize: '16px', cursor: 'pointer', fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: '10px', boxShadow: '0 4px 20px rgba(239,68,68,0.35)' }}>
-                                        <Swords size={18} /> Enter Arena Now
-                                    </button>
+                                    reg ? (
+                                        <button onClick={handleAttempt} style={{ padding: '14px 36px', borderRadius: '14px', background: 'linear-gradient(135deg,#ef4444,#b91c1c)', border: 'none', color: '#fff', fontWeight: 800, fontSize: '16px', cursor: 'pointer', fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: '10px', boxShadow: '0 4px 20px rgba(239,68,68,0.35)' }}>
+                                            <Swords size={18} /> Enter Arena Now
+                                        </button>
+                                    ) : (
+                                        <button onClick={() => registerContest(contestId, user?.username)} style={{ padding: '14px 36px', borderRadius: '14px', background: 'linear-gradient(135deg,#34d399,#059669)', border: 'none', color: '#0b1a14', fontWeight: 800, fontSize: '16px', cursor: 'pointer', fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: '10px', boxShadow: '0 4px 20px rgba(52,211,153,0.25)' }}>
+                                            <PlayCircle size={18} /> Register to Attempt
+                                        </button>
+                                    )
                                 ) : !reg ? (
-                                    <button onClick={() => registerContest(contestId)} style={{ padding: '14px 36px', borderRadius: '14px', background: 'linear-gradient(135deg,#34d399,#059669)', border: 'none', color: '#0b1a14', fontWeight: 800, fontSize: '16px', cursor: 'pointer', fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: '10px', boxShadow: '0 4px 20px rgba(52,211,153,0.25)' }}>
+                                    <button onClick={() => registerContest(contestId, user?.username)} style={{ padding: '14px 36px', borderRadius: '14px', background: 'linear-gradient(135deg,#34d399,#059669)', border: 'none', color: '#0b1a14', fontWeight: 800, fontSize: '16px', cursor: 'pointer', fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: '10px', boxShadow: '0 4px 20px rgba(52,211,153,0.25)' }}>
                                         <PlayCircle size={18} /> Register to Attempt
                                     </button>
                                 ) : null}

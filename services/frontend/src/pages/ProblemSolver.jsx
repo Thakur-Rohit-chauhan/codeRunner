@@ -4,10 +4,11 @@ import { Panel, Group, Separator } from 'react-resizable-panels'
 import Editor from '@monaco-editor/react'
 import { ArrowLeft, ChevronLeft, ChevronRight, Shuffle, Play, Pause, Square, Upload, Clock, Settings, Check, X, Tag, Code2, FileText, MessageSquare, History, Maximize2, Minimize2, RotateCcw, RotateCw, Terminal, Bookmark, Star, ThumbsUp, MessageCircle, ExternalLink, Lightbulb, ChevronUp, Search, ArrowUpDown, SlidersHorizontal, User, LogOut, Palette, BarChart3, Layout, BookOpen, ChevronDown, Filter, EyeOff, Plus, Minus } from 'lucide-react'
 import useAuthStore from '../store/authStore'
-import useSubmissionStore from '../store/submissionStore'
-import { getProblemDetail, mockProblems } from '../utils/mockData'
-import { buildStarterCodeMap, getDefaultLanguageForDomain, getLanguagesForDomain, getStarterCodeForLanguage, languageLabelMap } from '../utils/compilerLanguages'
+import useProblemStore from '../store/problemStore'
+import { getSeedProblemDetail } from '../utils/problemSeed'
+import { buildStarterCodeMap, getDefaultLanguageForDomain, getLanguagesForDomain, getStarterCodeForLanguage } from '../utils/compilerLanguages'
 import toast from 'react-hot-toast'
+import { buildCaseSummary, countSubmissionStatuses, getSubmissionStatusMeta, isAcceptedSubmission } from '../utils/submissionStatus'
 
 const COLORS = {
     bgMain: '#0b0f19',
@@ -115,223 +116,6 @@ function getInputLabel(problem) {
     return 'Custom Input'
 }
 
-function getMockRunResult(problem, lang) {
-    if (problem.domain === 'ML') {
-        if (problem.id === 15) {
-            return {
-                status: 'Accepted',
-                stdout: `[${languageLabelMap[lang]}] val_accuracy=73.4%\ntrain_loss=0.61\ncheckpoint=cnn_epoch5.pt`,
-                expected: 'Accuracy >= 70%',
-                time: '2m 18s',
-                memory: '1.3 GB',
-            }
-        }
-
-        if (problem.id === 16) {
-            return {
-                status: 'Accepted',
-                stdout: `[${languageLabelMap[lang]}] precision=0.92\nrecall=0.89\nmacro_f1=0.90`,
-                expected: 'precision / recall / f1 reported',
-                time: '1m 42s',
-                memory: '824 MB',
-            }
-        }
-
-        if (problem.id === 17) {
-            return {
-                status: 'Accepted',
-                stdout: `[${languageLabelMap[lang]}] m=0.61\nb=2.18\nmse=0.48`,
-                expected: 'm ≈ 0.6, b ≈ 2.2',
-                time: '0.8 s',
-                memory: '96 MB',
-            }
-        }
-
-        return {
-            status: 'Accepted',
-            stdout: `[${languageLabelMap[lang]}] benchmark run completed`,
-            expected: problem.testCases[0]?.expectedOutput || 'Benchmark cleared',
-            time: '1m 12s',
-            memory: '512 MB',
-        }
-    }
-
-    if (problem.domain === 'CTF') {
-        if (problem.id === 18) {
-            return {
-                status: 'Accepted',
-                stdout: `[${languageLabelMap[lang]}] suspicious_host=198.51.100.42\nflag=FLAG{covert_http_channel}`,
-                expected: 'FLAG{...}',
-                time: '1.1 s',
-                memory: '44 MB',
-            }
-        }
-
-        if (problem.id === 19) {
-            return {
-                status: 'Accepted',
-                stdout: `[${languageLabelMap[lang]}] offset=72\nsecret=0x080491d6\noutput=You got the flag!`,
-                expected: 'You got the flag!',
-                time: '0.9 s',
-                memory: '28 MB',
-            }
-        }
-
-        if (problem.id === 20) {
-            return {
-                status: 'Accepted',
-                stdout: `[${languageLabelMap[lang]}] bypass=ok\ntable=users\nadmin_hash=5f4dcc3b5aa765d61d8327deb882cf99`,
-                expected: 'Login bypassed',
-                time: '0.6 s',
-                memory: '24 MB',
-            }
-        }
-
-        return {
-            status: 'Accepted',
-            stdout: `[${languageLabelMap[lang]}] challenge verification completed`,
-            expected: problem.testCases[0]?.expectedOutput || 'Flag recovered',
-            time: '1.0 s',
-            memory: '32 MB',
-        }
-    }
-
-    return {
-        status: 'Accepted',
-        stdout: '[0, 1]',
-        expected: '[0,1]',
-        time: '4ms',
-        memory: '8.2 MB',
-    }
-}
-
-function getMockSubmitResult(problem, lang) {
-    if (problem.domain === 'ML') {
-        if (problem.id === 15) {
-            return {
-                status: 'Accepted',
-                stdout: `[${languageLabelMap[lang]}] hidden_test_accuracy=72.8%\nartifacts=model.pt, metrics.json`,
-                expected: 'Hidden benchmark passed',
-                time: '2m 44s',
-                memory: '1.4 GB',
-                allPassed: true,
-            }
-        }
-
-        if (problem.id === 16) {
-            return {
-                status: 'Accepted',
-                stdout: `[${languageLabelMap[lang]}] holdout_macro_f1=0.91\nreport_schema=pass`,
-                expected: 'Hidden benchmark passed',
-                time: '1m 58s',
-                memory: '880 MB',
-                allPassed: true,
-            }
-        }
-
-        if (problem.id === 17) {
-            return {
-                status: 'Accepted',
-                stdout: `[${languageLabelMap[lang]}] recovered_m=0.60\nrecovered_b=2.20\nplot_artifact=pass`,
-                expected: 'Hidden benchmark passed',
-                time: '1.0 s',
-                memory: '102 MB',
-                allPassed: true,
-            }
-        }
-
-        return {
-            status: 'Accepted',
-            stdout: `[${languageLabelMap[lang]}] model package accepted`,
-            expected: 'Hidden benchmark passed',
-            time: '1m 30s',
-            memory: '640 MB',
-            allPassed: true,
-        }
-    }
-
-    if (problem.domain === 'CTF') {
-        if (problem.id === 18) {
-            return {
-                status: 'Accepted',
-                stdout: `[${languageLabelMap[lang]}] flag verified\nFLAG{covert_http_channel}`,
-                expected: 'Flag verified',
-                time: '1.2 s',
-                memory: '44 MB',
-                allPassed: true,
-            }
-        }
-
-        if (problem.id === 19) {
-            return {
-                status: 'Accepted',
-                stdout: `[${languageLabelMap[lang]}] replay succeeded\nYou got the flag!`,
-                expected: 'Exploit replayed',
-                time: '1.0 s',
-                memory: '29 MB',
-                allPassed: true,
-            }
-        }
-
-        if (problem.id === 20) {
-            return {
-                status: 'Accepted',
-                stdout: `[${languageLabelMap[lang]}] injection chain replayed\nadmin secret extracted`,
-                expected: 'Verifier accepted finding',
-                time: '0.7 s',
-                memory: '25 MB',
-                allPassed: true,
-            }
-        }
-
-        return {
-            status: 'Accepted',
-            stdout: `[${languageLabelMap[lang]}] challenge solved`,
-            expected: 'Verifier accepted finding',
-            time: '1.1 s',
-            memory: '32 MB',
-            allPassed: true,
-        }
-    }
-
-    return {
-        status: 'Accepted',
-        stdout: 'All test cases passed',
-        expected: '—',
-        time: '4ms',
-        memory: '8.2 MB',
-        allPassed: true,
-    }
-}
-
-function getMockSubmissions(problem) {
-    if (problem.domain === 'ML') {
-        return [
-            { id: 1, status: 'Accepted', language: 'Python', runtime: '2m 44s', memory: '1.4 GB', timestamp: '2026-03-28 22:14', beats: 'top 18%' },
-            { id: 2, status: 'Wrong Answer', language: 'R', runtime: '—', memory: '—', timestamp: '2026-03-28 21:50', beats: null },
-            { id: 3, status: 'Accepted', language: 'SQL', runtime: '1m 58s', memory: '880 MB', timestamp: '2026-03-27 14:32', beats: 'top 24%' },
-            { id: 4, status: 'Time Limit Exceeded', language: 'Julia', runtime: '—', memory: '—', timestamp: '2026-03-26 11:05', beats: null },
-        ]
-    }
-
-    if (problem.domain === 'CTF') {
-        return [
-            { id: 1, status: 'Accepted', language: 'Python', runtime: '1.2 s', memory: '44 MB', timestamp: '2026-03-28 22:14', beats: 'top 12%' },
-            { id: 2, status: 'Wrong Answer', language: 'Bash', runtime: '—', memory: '—', timestamp: '2026-03-28 21:50', beats: null },
-            { id: 3, status: 'Accepted', language: 'C', runtime: '0.9 s', memory: '29 MB', timestamp: '2026-03-27 14:32', beats: 'top 21%' },
-            { id: 4, status: 'Time Limit Exceeded', language: 'PowerShell', runtime: '—', memory: '—', timestamp: '2026-03-26 11:05', beats: null },
-        ]
-    }
-
-    return [
-        { id: 1, status: 'Accepted', language: 'C++', runtime: '4 ms', memory: '8.2 MB', timestamp: '2026-03-28 22:14', beats: '95.3%' },
-        { id: 2, status: 'Wrong Answer', language: 'Python', runtime: '—', memory: '—', timestamp: '2026-03-28 21:50', beats: null },
-        { id: 3, status: 'Accepted', language: 'C++', runtime: '8 ms', memory: '9.1 MB', timestamp: '2026-03-27 14:32', beats: '82.1%' },
-        { id: 4, status: 'Time Limit Exceeded', language: 'Java', runtime: '—', memory: '—', timestamp: '2026-03-26 11:05', beats: null },
-        { id: 5, status: 'Accepted', language: 'JavaScript', runtime: '12 ms', memory: '10.4 MB', timestamp: '2026-03-25 09:18', beats: '74.6%' },
-    ]
-}
-
 export default function ProblemSolver() {
     const { id } = useParams()
     const navigate = useNavigate()
@@ -341,8 +125,16 @@ export default function ProblemSolver() {
     const domainParam = searchParams.get('domain')
 
     const { user, logout } = useAuthStore()
-    const addSubmission = useSubmissionStore((state) => state.addSubmission)
-    const rawProblem = useMemo(() => getProblemDetail(id) || getProblemDetail(1), [id])
+    const problems = useProblemStore((state) => state.problems)
+    const problemDetailsById = useProblemStore((state) => state.problemDetailsById)
+    const submissionsByUsername = useProblemStore((state) => state.submissionsByUsername)
+    const fetchProblemDetail = useProblemStore((state) => state.fetchProblemDetail)
+    const runProblem = useProblemStore((state) => state.runProblem)
+    const submitProblem = useProblemStore((state) => state.submitProblem)
+    const toggleBookmark = useProblemStore((state) => state.toggleBookmark)
+    const rawProblem = useMemo(() => {
+        return problemDetailsById[String(id)] || getSeedProblemDetail(id) || getSeedProblemDetail(1)
+    }, [id, problemDetailsById])
     const problem = useMemo(() => {
         const next = rawProblem || {}
         const domain = domainColors[next.domain] ? next.domain : 'DSA'
@@ -361,6 +153,7 @@ export default function ProblemSolver() {
             constraints: Array.isArray(next.constraints) ? next.constraints : [],
             starterCode: next.starterCode && typeof next.starterCode === 'object' ? next.starterCode : {},
             testCases: Array.isArray(next.testCases) ? next.testCases : [],
+            starred: Boolean(next.starred),
         }
     }, [rawProblem])
     const availableLanguages = useMemo(() => getLanguagesForDomain(problem.domain), [problem.domain])
@@ -371,7 +164,6 @@ export default function ProblemSolver() {
     )
     const [descTab, setDescTab] = useState('description')
 
-    const mockSubmissions = useMemo(() => getMockSubmissions(problem), [problem])
     const [bottomTab, setBottomTab] = useState('testcase')
     const [testInput, setTestInput] = useState(problem.testCases[0]?.input || '')
     const [testResult, setTestResult] = useState(null)
@@ -384,7 +176,6 @@ export default function ProblemSolver() {
     const [showProblemList, setShowProblemList] = useState(false)
     const [problemSearch, setProblemSearch] = useState('')
     const [starred, setStarred] = useState(false)
-    const [bookmarked, setBookmarked] = useState(false)
     const [profileDropdownOpen, setProfileDropdownOpen] = useState(false)
     const [editorFullscreen, setEditorFullscreen] = useState(false)
     const langRef = useRef(null)
@@ -402,13 +193,62 @@ export default function ProblemSolver() {
         setBottomTab('testcase')
     }, [problem])
 
+    useEffect(() => {
+        fetchProblemDetail(id, user?.username)
+    }, [fetchProblemDetail, id, user?.username])
+
+    useEffect(() => {
+        setStarred(Boolean(problem.starred))
+    }, [problem.id, problem.starred])
+
     // Determine the list of problems based on topic or list context
     const contextProblems = useMemo(() => {
-        if (listParam === 'bookmarks') return mockProblems.filter(p => p.starred)
-        if (topicParam) return mockProblems.filter(p => (p.tags || []).includes(decodeURIComponent(topicParam)))
-        if (domainParam) return mockProblems.filter(p => p.domain === domainParam)
-        return mockProblems
-    }, [topicParam, listParam, domainParam])
+        if (listParam === 'bookmarks') return problems.filter(p => p.starred)
+        if (topicParam) return problems.filter(p => (p.tags || []).includes(decodeURIComponent(topicParam)))
+        if (domainParam) return problems.filter(p => p.domain === domainParam)
+        return problems
+    }, [domainParam, listParam, problems, topicParam])
+
+    const problemSubmissions = useMemo(() => {
+        const currentUserSubmissions = user?.username ? (submissionsByUsername[user.username] || []) : []
+        return currentUserSubmissions
+            .filter((submission) => String(submission.problemId) === String(problem.id))
+            .map((submission) => ({
+                id: submission.id,
+                status: submission.status,
+                language: submission.language,
+                runtime: submission.runtime || '—',
+                memory: submission.memory || '—',
+                stdout: submission.stdout || '',
+                expected: submission.expected || '',
+                stderr: submission.stderr || '',
+                passedCases: submission.passedCases,
+                totalCases: submission.totalCases,
+                cases: Array.isArray(submission.cases) ? submission.cases : [],
+                timestamp: submission.submittedAt
+                    ? new Date(submission.submittedAt).toLocaleString('en-US', {
+                        year: 'numeric',
+                        month: '2-digit',
+                        day: '2-digit',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                    })
+                    : '—',
+                beats: null,
+            }))
+    }, [problem.id, submissionsByUsername, user?.username])
+
+    const problemSubmissionStats = useMemo(
+        () => countSubmissionStatuses(problemSubmissions),
+        [problemSubmissions]
+    )
+
+    const testResultCaseSummary = useMemo(() => {
+        if (!Array.isArray(testResult?.cases) || testResult.cases.length === 0) return null
+
+        const passedCases = testResult.cases.filter((caseResult) => caseResult.status === 'Accepted').length
+        return `${passedCases}/${testResult.cases.length} cases passed`
+    }, [testResult])
 
     const solvedCount = useMemo(() => contextProblems.filter(p => p.status === 'solved').length, [contextProblems])
 
@@ -549,7 +389,7 @@ export default function ProblemSolver() {
         setTimeout(() => setSaved(true), 800)
     }, [lang])
 
-    const handleEditorMount = (editor, monaco) => {
+    const handleEditorMount = (editor) => {
         editorRef.current = editor
         editor.onDidChangeCursorPosition((e) => {
             setCursorPos({ line: e.position.lineNumber, col: e.position.column })
@@ -612,43 +452,90 @@ export default function ProblemSolver() {
         })
     }
 
-    const handleRun = () => {
+    const handleRun = async () => {
         setRunning(true)
         setBottomTab('result')
-        setTimeout(() => {
-            setTestResult(getMockRunResult(problem, lang))
-            setRunning(false)
-            toast.success(getRunToast(problem), {
+        try {
+            const result = await runProblem(problem.id, {
+                username: user?.username,
+                language: lang,
+                code: codes[lang],
+                input: testInput,
+            })
+            const nextResult = result || {
+                status: 'Runtime Error',
+                stdout: '',
+                expected: '',
+                stderr: 'Judge returned no result',
+                time: 'N/A',
+                memory: 'N/A',
+                allPassed: false,
+            }
+            setTestResult(nextResult)
+
+            const toastFn = nextResult.allPassed ? toast.success : toast.error
+            const toastMessage = nextResult.allPassed ? getRunToast(problem) : (nextResult.status || 'Run failed')
+            toastFn(toastMessage, {
                 style: { background: 'rgba(30,36,44,0.95)', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' }
             })
-        }, 1500)
+        } catch (error) {
+            setTestResult({
+                status: 'Runtime Error',
+                stdout: '',
+                expected: '',
+                stderr: error.response?.data?.detail || 'Judge request failed',
+                time: 'N/A',
+                memory: 'N/A',
+            })
+            toast.error(error.response?.data?.detail || 'Run failed', {
+                style: { background: 'rgba(30,36,44,0.95)', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' }
+            })
+        } finally {
+            setRunning(false)
+        }
     }
 
-    const handleSubmit = () => {
+    const handleSubmit = async () => {
         setRunning(true)
         setBottomTab('result')
-        setTimeout(() => {
-            const result = getMockSubmitResult(problem, lang)
-            setTestResult(result)
-            setRunning(false)
-
-            if (user?.username) {
-                addSubmission(user.username, {
-                    problemId: problem.id,
-                    problemTitle: problem.title,
-                    domain: problem.domain,
-                    status: result.status,
-                    language: languageLabelMap[lang] || lang,
-                    runtime: result.time,
-                    memory: result.memory,
-                    submittedAt: new Date().toISOString(),
-                })
+        try {
+            const response = await submitProblem(problem.id, {
+                username: user?.username,
+                language: lang,
+                code: codes[lang],
+            })
+            const nextResult = response.result || {
+                status: 'Runtime Error',
+                stdout: '',
+                expected: '',
+                stderr: 'Judge returned no result',
+                time: 'N/A',
+                memory: 'N/A',
+                allPassed: false,
             }
+            setTestResult(nextResult)
 
-            toast.success(getSubmitToast(problem), {
+            const toastFn = nextResult.allPassed ? toast.success : toast.error
+            const toastMessage = nextResult.allPassed ? getSubmitToast(problem) : (nextResult.status || 'Submission failed')
+            toastFn(toastMessage, {
                 style: { background: 'rgba(30,36,44,0.95)', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' }
             })
-        }, 2000)
+        } catch (error) {
+            setTestResult({
+                status: 'Runtime Error',
+                stdout: '',
+                expected: '',
+                stderr: error.response?.data?.detail || 'Judge request failed',
+                time: 'N/A',
+                memory: 'N/A',
+                allPassed: false,
+            })
+            toast.error(error.response?.data?.detail || 'Submission failed', {
+                style: { background: 'rgba(30,36,44,0.95)', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' }
+            })
+        } finally {
+            setRunning(false)
+        }
     }
 
     const descTabs = [
@@ -925,11 +812,11 @@ export default function ProblemSolver() {
                                 {/* Quick stats */}
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '6px', marginBottom: '8px', padding: '0 4px' }}>
                                     {[
-                                        { icon: BookOpen, label: 'Lists' },
-                                        { icon: Layout, label: 'Notes' },
-                                        { icon: BarChart3, label: 'Stats' },
-                                    ].map(({ icon: Icon, label }) => (
-                                        <button key={label} style={{
+                                        { icon: BookOpen, label: 'Lists', onClick: () => { setProfileDropdownOpen(false); navigate('/list/bookmarks') } },
+                                        { icon: Layout, label: 'Notes', onClick: () => { setProfileDropdownOpen(false); navigate('/notes') } },
+                                        { icon: BarChart3, label: 'Stats', onClick: () => { setProfileDropdownOpen(false); navigate(`/profile/${user?.username}`) } },
+                                    ].map(({ icon: Icon, label, onClick }) => (
+                                        <button key={label} onClick={onClick} style={{
                                             display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
                                             gap: '6px', padding: '10px 4px', borderRadius: '12px',
                                             background: 'rgba(255,255,255,0.02)', border: '1px solid transparent',
@@ -938,7 +825,7 @@ export default function ProblemSolver() {
                                             onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(52,211,153,0.08)'; e.currentTarget.style.borderColor = 'rgba(52,211,153,0.2)' }}
                                             onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.02)'; e.currentTarget.style.borderColor = 'transparent' }}
                                         >
-                                            <Icon style={{ width: '16px', height: '16px', color: '#6b7280' }} />
+                                            {React.createElement(Icon, { style: { width: '16px', height: '16px', color: '#6b7280' } })}
                                             <span style={{ fontSize: '9px', fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{label}</span>
                                         </button>
                                     ))}
@@ -963,7 +850,7 @@ export default function ProblemSolver() {
                                             onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.06)'; e.currentTarget.style.color = '#fff' }}
                                             onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = '#d1d5db' }}
                                         >
-                                            <Icon style={{ width: '16px', height: '16px', color: '#9ca3af' }} />
+                                            {React.createElement(Icon, { style: { width: '16px', height: '16px', color: '#9ca3af' } })}
                                             {label}
                                         </button>
                                     ))}
@@ -1432,7 +1319,20 @@ export default function ProblemSolver() {
                                             { icon: ThumbsUp, label: '410', active: false, onClick: () => toast('Liked!', { icon: '👍', style: { background: 'rgba(30,36,44,0.95)', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' } }) },
                                             { icon: MessageCircle, label: '106', active: false, onClick: () => setDescTab('solutions') },
                                             { icon: Star, label: '', active: starred, activeColor: '#fbbf24', onClick: () => { setStarred(!starred); toast(starred ? 'Removed star' : 'Starred!', { icon: starred ? '☆' : '⭐', style: { background: 'rgba(30,36,44,0.95)', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' } }) } },
-                                            { icon: Bookmark, label: '', active: bookmarked, activeColor: '#60a5fa', onClick: () => { setBookmarked(!bookmarked); toast(bookmarked ? 'Removed bookmark' : 'Bookmarked!', { icon: bookmarked ? '🔖' : '📑', style: { background: 'rgba(30,36,44,0.95)', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' } }) } },
+                                            {
+                                                icon: Bookmark,
+                                                label: '',
+                                                active: problem.starred,
+                                                activeColor: '#60a5fa',
+                                                onClick: async () => {
+                                                    const nextProblem = await toggleBookmark(problem.id, user?.username)
+                                                    const isBookmarked = Boolean(nextProblem?.starred ?? !problem.starred)
+                                                    toast(isBookmarked ? 'Bookmarked!' : 'Removed bookmark', {
+                                                        icon: isBookmarked ? '📑' : '🔖',
+                                                        style: { background: 'rgba(30,36,44,0.95)', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' }
+                                                    })
+                                                },
+                                            },
                                             { icon: ExternalLink, label: '', active: false, onClick: () => { navigator.clipboard.writeText(window.location.href); toast.success('Link copied!', { style: { background: 'rgba(30,36,44,0.95)', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' } }) } },
                                         ].map((item, i) => (
                                             <button key={i} onClick={item.onClick} style={{
@@ -1471,8 +1371,54 @@ export default function ProblemSolver() {
                                 </SolutionsTabErrorBoundary>
                             )}
 
-                            {descTab === 'submissions' && (
-                                <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '0' }}>
+                                    {descTab === 'submissions' && (
+                                        <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '0' }}>
+                                    <div style={{
+                                        display: 'flex',
+                                        alignItems: 'flex-start',
+                                        justifyContent: 'space-between',
+                                        gap: '14px',
+                                        flexWrap: 'wrap',
+                                        padding: '0 0 14px 0',
+                                    }}>
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                            <span style={{ fontSize: '18px', fontWeight: 700, color: '#f8fafc' }}>
+                                                {problemSubmissionStats.total} submission{problemSubmissionStats.total === 1 ? '' : 's'}
+                                            </span>
+                                            <span style={{ fontSize: '12.5px', color: '#6b7280' }}>
+                                                {problemSubmissionStats.accepted} accepted and {problemSubmissionStats.failed} failed attempts for this problem.
+                                            </span>
+                                        </div>
+
+                                        {problemSubmissionStats.entries.length > 0 && (
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                                {problemSubmissionStats.entries.slice(0, 4).map(([status, count]) => {
+                                                    const statusMeta = getSubmissionStatusMeta(status)
+                                                    return (
+                                                        <span
+                                                            key={status}
+                                                            style={{
+                                                                display: 'inline-flex',
+                                                                alignItems: 'center',
+                                                                gap: '6px',
+                                                                padding: '6px 10px',
+                                                                borderRadius: '999px',
+                                                                fontSize: '12px',
+                                                                fontWeight: 700,
+                                                                color: statusMeta.color,
+                                                                background: statusMeta.bg,
+                                                                border: `1px solid ${statusMeta.border}`,
+                                                            }}
+                                                        >
+                                                            {status}
+                                                            <span style={{ color: '#d1d5db' }}>{count}</span>
+                                                        </span>
+                                                    )
+                                                })}
+                                            </div>
+                                        )}
+                                    </div>
+
                                     {/* Header */}
                                     <div style={{
                                         display: 'grid',
@@ -1486,7 +1432,7 @@ export default function ProblemSolver() {
                                         ))}
                                     </div>
 
-                                    {mockSubmissions.length === 0 ? (
+                                    {problemSubmissions.length === 0 ? (
                                         <div style={{
                                             display: 'flex', flexDirection: 'column', alignItems: 'center',
                                             justifyContent: 'center', height: '200px', gap: '10px',
@@ -1495,16 +1441,11 @@ export default function ProblemSolver() {
                                             <p style={{ fontSize: '13px', color: '#6b7280' }}>No submissions yet</p>
                                         </div>
                                     ) : (
-                                        mockSubmissions.map((sub) => {
-                                            const isAccepted = sub.status === 'Accepted'
-                                            const statusColor = isAccepted ? '#34d399'
-                                                : sub.status === 'Wrong Answer' ? '#f87171'
-                                                    : sub.status === 'Time Limit Exceeded' ? '#fbbf24'
-                                                        : '#9ca3af'
-                                            const statusBg = isAccepted ? 'rgba(52,211,153,0.08)'
-                                                : sub.status === 'Wrong Answer' ? 'rgba(248,113,113,0.08)'
-                                                    : sub.status === 'Time Limit Exceeded' ? 'rgba(251,191,36,0.08)'
-                                                        : 'rgba(255,255,255,0.04)'
+                                        problemSubmissions.map((sub) => {
+                                            const isAccepted = isAcceptedSubmission(sub.status)
+                                            const statusMeta = getSubmissionStatusMeta(sub.status)
+                                            const caseSummary = buildCaseSummary(sub)
+                                            const failureDetail = sub.stderr || (!isAccepted && sub.expected ? `Expected: ${sub.expected}` : '')
                                             return (
                                                 <div key={sub.id} style={{
                                                     display: 'grid',
@@ -1519,18 +1460,33 @@ export default function ProblemSolver() {
                                                     onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.02)'}
                                                     onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                                                 >
-                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                                        <span style={{
-                                                            display: 'inline-flex', alignItems: 'center', gap: '5px',
-                                                            fontSize: '12.5px', fontWeight: 600, color: statusColor,
-                                                            padding: '3px 10px', borderRadius: '20px',
-                                                            backgroundColor: statusBg,
-                                                        }}>
-                                                            {isAccepted && <Check style={{ width: '11px', height: '11px' }} />}
-                                                            {sub.status}
-                                                        </span>
-                                                        {isAccepted && sub.beats && (
-                                                            <span style={{ fontSize: '11px', color: '#6b7280' }}>Beats {sub.beats}</span>
+                                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '6px', minWidth: 0 }}>
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+                                                            <span style={{
+                                                                display: 'inline-flex', alignItems: 'center', gap: '5px',
+                                                                fontSize: '12.5px', fontWeight: 600, color: statusMeta.color,
+                                                                padding: '3px 10px', borderRadius: '20px',
+                                                                backgroundColor: statusMeta.bg,
+                                                                border: `1px solid ${statusMeta.border}`,
+                                                            }}>
+                                                                {isAccepted && <Check style={{ width: '11px', height: '11px' }} />}
+                                                                {sub.status}
+                                                            </span>
+                                                            {isAccepted && sub.beats && (
+                                                                <span style={{ fontSize: '11px', color: '#6b7280' }}>Beats {sub.beats}</span>
+                                                            )}
+                                                        </div>
+                                                        {(caseSummary || failureDetail) && (
+                                                            <span style={{
+                                                                fontSize: '11px',
+                                                                color: '#6b7280',
+                                                                maxWidth: '100%',
+                                                                whiteSpace: 'nowrap',
+                                                                overflow: 'hidden',
+                                                                textOverflow: 'ellipsis',
+                                                            }}>
+                                                                {[caseSummary, failureDetail].filter(Boolean).join(' • ')}
+                                                            </span>
                                                         )}
                                                     </div>
                                                     <span style={{ fontSize: '12px', color: '#9ca3af', fontWeight: 500 }}>{sub.language}</span>
@@ -1817,21 +1773,27 @@ export default function ProblemSolver() {
                                                         <div style={{
                                                             width: '22px', height: '22px', borderRadius: '50%', display: 'flex',
                                                             alignItems: 'center', justifyContent: 'center',
-                                                            backgroundColor: testResult.status === 'Accepted' ? 'rgba(52,211,153,0.15)' : 'rgba(248,113,113,0.15)',
+                                                            backgroundColor: getSubmissionStatusMeta(testResult.status).bg,
                                                         }}>
-                                                            {testResult.status === 'Accepted' ? (
-                                                                <Check style={{ width: '13px', height: '13px', color: '#34d399' }} />
+                                                            {isAcceptedSubmission(testResult.status) ? (
+                                                                <Check style={{ width: '13px', height: '13px', color: getSubmissionStatusMeta(testResult.status).color }} />
                                                             ) : (
-                                                                <X style={{ width: '13px', height: '13px', color: '#f87171' }} />
+                                                                <X style={{ width: '13px', height: '13px', color: getSubmissionStatusMeta(testResult.status).color }} />
                                                             )}
                                                         </div>
                                                         <span style={{
                                                             fontSize: '16px', fontWeight: 700,
-                                                            color: testResult.status === 'Accepted' ? '#34d399' : '#f87171'
+                                                            color: getSubmissionStatusMeta(testResult.status).color
                                                         }}>
                                                             {testResult.status}
                                                         </span>
                                                     </div>
+
+                                                    {testResultCaseSummary && (
+                                                        <div style={{ fontSize: '12.5px', color: '#9ca3af' }}>
+                                                            {testResultCaseSummary}
+                                                        </div>
+                                                    )}
 
                                                     {/* Stats */}
                                                     <div style={{ display: 'flex', gap: '10px' }}>
@@ -1856,6 +1818,28 @@ export default function ProblemSolver() {
                                                         }}>
                                                             <p style={{ fontSize: '11px', color: '#6b7280', marginBottom: '6px', fontWeight: 500 }}>Output</p>
                                                             <pre style={{ fontSize: '13px', fontFamily: "'JetBrains Mono', monospace", color: '#e5e7eb', margin: 0 }}>{testResult.stdout}</pre>
+                                                        </div>
+                                                    )}
+
+                                                    {!isAcceptedSubmission(testResult.status) && testResult.expected && (
+                                                        <div style={{
+                                                            padding: '12px 14px', borderRadius: '10px',
+                                                            backgroundColor: 'rgba(255,255,255,0.02)',
+                                                            border: '1px solid rgba(255,255,255,0.05)',
+                                                        }}>
+                                                            <p style={{ fontSize: '11px', color: '#6b7280', marginBottom: '6px', fontWeight: 500 }}>Expected</p>
+                                                            <pre style={{ fontSize: '13px', fontFamily: "'JetBrains Mono', monospace", color: '#e5e7eb', margin: 0, whiteSpace: 'pre-wrap' }}>{testResult.expected}</pre>
+                                                        </div>
+                                                    )}
+
+                                                    {testResult.stderr && (
+                                                        <div style={{
+                                                            padding: '12px 14px', borderRadius: '10px',
+                                                            backgroundColor: 'rgba(255,255,255,0.02)',
+                                                            border: '1px solid rgba(255,255,255,0.05)',
+                                                        }}>
+                                                            <p style={{ fontSize: '11px', color: '#6b7280', marginBottom: '6px', fontWeight: 500 }}>Judge Output</p>
+                                                            <pre style={{ fontSize: '13px', fontFamily: "'JetBrains Mono', monospace", color: '#fca5a5', margin: 0, whiteSpace: 'pre-wrap' }}>{testResult.stderr}</pre>
                                                         </div>
                                                     )}
                                                 </div>

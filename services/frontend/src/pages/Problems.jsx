@@ -3,20 +3,17 @@ import { Link, useLocation } from 'react-router-dom'
 import { Search, Check, Minus, ChevronLeft, ChevronRight, ArrowUpDown, SlidersHorizontal, BarChart3, Lock, Bookmark, FolderOpen, X, EyeOff, Eye } from 'lucide-react'
 import toast from 'react-hot-toast'
 import Navbar from '../components/Navbar/Navbar'
-import { mockProblems } from '../utils/mockData'
 import FilterPopover from '../components/Problems/FilterPopover'
-
-const diffColors = {
-    Easy: 'text-[#34d399]',
-    Medium: 'text-[#fbbf24]',
-    Hard: 'text-[#f87171]',
-}
+import useProblemStore from '../store/problemStore'
+import useAuthStore from '../store/authStore'
 
 const diffLabels = {
     Easy: 'Easy',
     Medium: 'Med.',
     Hard: 'Hard',
 }
+
+const difficultyOrder = { Easy: 1, Medium: 2, Hard: 3 }
 
 const sortOptions = [
     { key: 'custom', label: 'Custom', icon: 'check' },
@@ -28,6 +25,9 @@ const sortOptions = [
 ]
 
 export default function Problems() {
+    const problems = useProblemStore((state) => state.problems)
+    const toggleBookmark = useProblemStore((state) => state.toggleBookmark)
+    const user = useAuthStore((state) => state.user)
     const [search, setSearch] = useState('')
     const [page, setPage] = useState(1)
     const [sortOpen, setSortOpen] = useState(false)
@@ -36,9 +36,8 @@ export default function Problems() {
     const [showTags, setShowTags] = useState(false)
     const [filterOpen, setFilterOpen] = useState(false)
     const [matchStrategy, setMatchStrategy] = useState('All') // 'All', 'Any'
-    const [bookmarkVersion, setBookmarkVersion] = useState(0)
     const [filters, setFilters] = useState([
-        { id: Date.now(), enabled: true, property: 'Status', operator: 'is', value: '' }
+        { id: 1, enabled: true, property: 'Status', operator: 'is', value: '' }
     ])
 
     const sortRef = useRef(null)
@@ -49,9 +48,9 @@ export default function Problems() {
     const urlDomain = queryParams.get('domain')
 
     const domainProblems = useMemo(() => {
-        if (!urlDomain) return mockProblems
-        return mockProblems.filter(p => p.domain === urlDomain)
-    }, [urlDomain, bookmarkVersion])
+        if (!urlDomain) return problems
+        return problems.filter(p => p.domain === urlDomain)
+    }, [problems, urlDomain])
 
     const solvedCount = useMemo(() => domainProblems.filter((p) => p.status === 'solved').length, [domainProblems])
     const totalCount = domainProblems.length
@@ -80,8 +79,6 @@ export default function Problems() {
         setSortOpen(false)
         setPage(1)
     }
-
-    const difficultyOrder = { Easy: 1, Medium: 2, Hard: 3 }
 
     const filtered = useMemo(() => {
         let result = [...domainProblems]
@@ -136,23 +133,23 @@ export default function Problems() {
         }
 
         return result
-    }, [domainProblems, search, activeSort, sortDirection, filters, matchStrategy, bookmarkVersion])
+    }, [domainProblems, search, activeSort, sortDirection, filters, matchStrategy])
 
     const totalPages = Math.ceil(filtered.length / perPage)
     const paginated = filtered.slice((page - 1) * perPage, page * perPage)
 
-    const handleToggleBookmark = (event, problemId) => {
+    const handleToggleBookmark = async (event, problemId) => {
         event.preventDefault()
         event.stopPropagation()
 
-        const problem = mockProblems.find((item) => item.id === problemId)
+        const problem = problems.find((item) => item.id === problemId)
         if (!problem) return
 
-        problem.starred = !problem.starred
-        setBookmarkVersion((value) => value + 1)
+        const nextProblem = await toggleBookmark(problemId, user?.username)
+        const isStarred = Boolean(nextProblem?.starred ?? !problem.starred)
 
-        toast.success(problem.starred ? 'Added to bookmarks' : 'Removed from bookmarks', {
-            icon: problem.starred ? '🔖' : '🗑️',
+        toast.success(isStarred ? 'Added to bookmarks' : 'Removed from bookmarks', {
+            icon: isStarred ? '🔖' : '🗑️',
             style: {
                 background: 'rgba(30,36,44,0.95)',
                 color: '#fff',
@@ -243,7 +240,6 @@ export default function Problems() {
                                         const isLocked = opt.icon === 'lock'
                                         const isActive = activeSort === opt.key
                                         const isLast = opt.key === 'tags'
-                                        const showDivider = idx === 0 || isLast
 
                                         return (
                                             <button

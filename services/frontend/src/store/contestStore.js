@@ -1,11 +1,13 @@
 import { create } from 'zustand'
-import { mockProblems } from '../utils/mockData'
 import { buildStarterCodeMap } from '../utils/compilerLanguages'
+import api from '../services/api'
+import useProblemStore from './problemStore'
+import { getSeedProblemDetail, getSeedProblemIdsByDomain } from '../utils/problemSeed'
 
 // Grab a deterministic set of problem ids to seed contests
-const dsaIds  = mockProblems.filter(p => p.domain === 'DSA').map(p => p.id)
-const ctfIds  = mockProblems.filter(p => p.domain === 'CTF').map(p => p.id)
-const mlIds   = mockProblems.filter(p => p.domain === 'ML').map(p => p.id)
+const dsaIds = getSeedProblemIdsByDomain('DSA')
+const ctfIds = getSeedProblemIdsByDomain('CTF')
+const mlIds = getSeedProblemIdsByDomain('ML')
 
 const seed = (ids, n) => ids.slice(0, n)
 
@@ -29,6 +31,19 @@ const accuracyLeaderboard = (rows) => rows
 const rankContestLeaderboard = (contest, rows) => {
     const ranking = contest.ranking || (contest.domain === 'ML' ? 'accuracy' : 'score')
     return ranking === 'accuracy' ? accuracyLeaderboard(rows) : scoreLeaderboard(rows)
+}
+
+const normalizeContest = (contest) => ({
+    ...contest,
+    leaderboard: rankContestLeaderboard(contest, contest?.leaderboard || []),
+})
+
+const upsertContest = (contests, contest) => {
+    const normalized = normalizeContest(contest)
+    const exists = contests.some(current => current.id === normalized.id)
+    return exists
+        ? contests.map(current => current.id === normalized.id ? normalized : current)
+        : [normalized, ...contests]
 }
 
 const seededScoreRows = [
@@ -176,6 +191,9 @@ const initialContests = [
 // ── Store ─────────────────────────────────────────────────────────────────────
 const useContestStore = create((set, get) => ({
     contests: initialContests,
+    isSyncing: false,
+    syncError: null,
+    hasSynced: false,
 
     // User-created problems bank: full problem objects
     customProblems: [],
@@ -192,21 +210,67 @@ const useContestStore = create((set, get) => ({
 
     // ── Actions ───────────────────────────────────────────────────────────────
 
-    registerContest: (id) => set(s => ({
-        registered: { ...s.registered, [id]: true },
-        contests: s.contests.map(c => c.id === id
-            ? { ...c, participants: c.participants + 1 }
-            : c
-        ),
-    })),
+    syncContests: async () => {
+        if (get().isSyncing) return
 
-    unregisterContest: (id) => set(s => ({
-        registered: { ...s.registered, [id]: false },
-        contests: s.contests.map(c => c.id === id
-            ? { ...c, participants: Math.max(0, c.participants - 1) }
-            : c
-        ),
-    })),
+        set({ isSyncing: true, syncError: null })
+        try {
+            const response = await api.get('/contest/contests')
+            const contests = (response.data?.contests || []).map(normalizeContest)
+            set({
+                contests,
+                isSyncing: false,
+                syncError: null,
+                hasSynced: true,
+            })
+        } catch (error) {
+            set({
+                isSyncing: false,
+                syncError: error?.message || 'Failed to sync contests',
+                hasSynced: true,
+            })
+        }
+    },
+
+    registerContest: async (id, username) => {
+        set(s => ({
+            registered: { ...s.registered, [id]: true },
+            contests: s.contests.map(c => c.id === id
+                ? { ...c, participants: c.participants + 1 }
+                : c
+            ),
+        }))
+
+        try {
+            const response = await api.post(`/contest/contests/${id}/register`, { username })
+            const nextContest = response.data?.contest
+            if (nextContest) {
+                set(s => ({ contests: upsertContest(s.contests, nextContest) }))
+            }
+        } catch {
+            // Keep optimistic local state so the UI remains usable if the backend is unavailable.
+        }
+    },
+
+    unregisterContest: async (id, username) => {
+        set(s => ({
+            registered: { ...s.registered, [id]: false },
+            contests: s.contests.map(c => c.id === id
+                ? { ...c, participants: Math.max(0, c.participants - 1) }
+                : c
+            ),
+        }))
+
+        try {
+            const response = await api.post(`/contest/contests/${id}/unregister`, { username })
+            const nextContest = response.data?.contest
+            if (nextContest) {
+                set(s => ({ contests: upsertContest(s.contests, nextContest) }))
+            }
+        } catch {
+            // Keep optimistic local state so the UI remains usable if the backend is unavailable.
+        }
+    },
 
     addCustomProblem: (problemData) => {
         const id = `cp-${Date.now()}`
@@ -234,7 +298,24 @@ const useContestStore = create((set, get) => ({
         return id
     },
 
-    createContest: (data) => {
+    createContest: async (data, username) => {
+        try {
+            const response = await api.post('/contest/contests', {
+                ...data,
+                createdBy: username || data.createdBy || 'user',
+            })
+            const contest = response.data?.contest
+            if (contest) {
+                set(s => ({
+                    contests: upsertContest(s.contests, contest),
+                    registered: { ...s.registered, [contest.id]: true },
+                }))
+                return contest.id
+            }
+        } catch {
+            // Fall through to local-only creation below.
+        }
+
         const id = `cr-custom-${Date.now()}`
         const contest = {
             id,
@@ -265,61 +346,88 @@ const useContestStore = create((set, get) => ({
 
     endAttempt: () => set({ activeAttempt: null }),
 
-    recordContestResult: (contestId, submission) => set(s => ({
-        contests: s.contests.map(contest => {
-            if (contest.id !== contestId) return contest
+    recordContestResult: async (contestId, submission) => {
+        set(s => ({
+            contests: s.contests.map(contest => {
+                if (contest.id !== contestId) return contest
 
-            const ranking = contest.ranking || (contest.domain === 'ML' ? 'accuracy' : 'score')
-            const leaderboard = [...(contest.leaderboard || [])]
-            const existingIndex = leaderboard.findIndex(row => row.name === submission.name)
-            const existing = existingIndex >= 0 ? leaderboard[existingIndex] : null
+                const ranking = contest.ranking || (contest.domain === 'ML' ? 'accuracy' : 'score')
+                const leaderboard = [...(contest.leaderboard || [])]
+                const existingIndex = leaderboard.findIndex(row => row.name === submission.name)
+                const existing = existingIndex >= 0 ? leaderboard[existingIndex] : null
 
-            let nextRow
-            if (ranking === 'accuracy') {
-                const candidateAccuracy = submission.accuracy || 0
-                const keepExistingMetric = existing && (existing.accuracy || 0) > candidateAccuracy
-                const keepExistingTime = existing && (existing.accuracy || 0) === candidateAccuracy && (existing.timeSeconds ?? Infinity) <= (submission.timeSeconds ?? Infinity)
-                nextRow = keepExistingMetric || keepExistingTime
-                    ? { ...existing, submissions: Math.max(existing?.submissions || 0, submission.submissions || 0) }
-                    : {
-                        name: submission.name,
-                        country: submission.country || existing?.country || '🌍',
-                        accuracy: candidateAccuracy,
-                        submissions: submission.submissions || existing?.submissions || 0,
-                        time: submission.time,
-                        timeSeconds: submission.timeSeconds ?? 0,
-                    }
-            } else {
-                const candidateScore = submission.score || 0
-                const keepExistingMetric = existing && (existing.score || 0) > candidateScore
-                const keepExistingTime = existing && (existing.score || 0) === candidateScore && (existing.timeSeconds ?? Infinity) <= (submission.timeSeconds ?? Infinity)
-                nextRow = keepExistingMetric || keepExistingTime
-                    ? { ...existing, solved: Math.max(existing?.solved || 0, submission.solved || 0) }
-                    : {
-                        name: submission.name,
-                        country: submission.country || existing?.country || '🌍',
-                        score: candidateScore,
-                        solved: submission.solved || 0,
-                        time: submission.time,
-                        timeSeconds: submission.timeSeconds ?? 0,
-                    }
+                let nextRow
+                if (ranking === 'accuracy') {
+                    const candidateAccuracy = submission.accuracy || 0
+                    const keepExistingMetric = existing && (existing.accuracy || 0) > candidateAccuracy
+                    const keepExistingTime = existing && (existing.accuracy || 0) === candidateAccuracy && (existing.timeSeconds ?? Infinity) <= (submission.timeSeconds ?? Infinity)
+                    nextRow = keepExistingMetric || keepExistingTime
+                        ? { ...existing, submissions: Math.max(existing?.submissions || 0, submission.submissions || 0) }
+                        : {
+                            name: submission.name,
+                            country: submission.country || existing?.country || '🌍',
+                            accuracy: candidateAccuracy,
+                            submissions: submission.submissions || existing?.submissions || 0,
+                            time: submission.time,
+                            timeSeconds: submission.timeSeconds ?? 0,
+                        }
+                } else {
+                    const candidateScore = submission.score || 0
+                    const keepExistingMetric = existing && (existing.score || 0) > candidateScore
+                    const keepExistingTime = existing && (existing.score || 0) === candidateScore && (existing.timeSeconds ?? Infinity) <= (submission.timeSeconds ?? Infinity)
+                    nextRow = keepExistingMetric || keepExistingTime
+                        ? { ...existing, solved: Math.max(existing?.solved || 0, submission.solved || 0) }
+                        : {
+                            name: submission.name,
+                            country: submission.country || existing?.country || '🌍',
+                            score: candidateScore,
+                            solved: submission.solved || 0,
+                            time: submission.time,
+                            timeSeconds: submission.timeSeconds ?? 0,
+                        }
+                }
+
+                if (existingIndex >= 0) leaderboard.splice(existingIndex, 1, nextRow)
+                else leaderboard.push(nextRow)
+
+                const ranked = rankContestLeaderboard(contest, leaderboard)
+                const userRow = ranked.find(row => row.name === submission.name)
+
+                return {
+                    ...contest,
+                    leaderboard: ranked,
+                    resultsUserName: submission.name,
+                    results: ranking === 'accuracy'
+                        ? {
+                            ...contest.results,
+                            userRank: userRow?.rank,
+                            userAccuracy: userRow?.accuracy,
+                            userSubmissions: userRow?.submissions,
+                            userTime: userRow?.time,
+                            userTimeSeconds: userRow?.timeSeconds,
+                        }
+                        : {
+                            ...contest.results,
+                            userRank: userRow?.rank,
+                            userScore: userRow?.score,
+                            userSolved: userRow?.solved,
+                            userTime: userRow?.time,
+                            userTimeSeconds: userRow?.timeSeconds,
+                        },
+                }
+            }),
+        }))
+
+        try {
+            const response = await api.post(`/contest/contests/${contestId}/results`, submission)
+            const nextContest = response.data?.contest
+            if (nextContest) {
+                set(s => ({ contests: upsertContest(s.contests, nextContest) }))
             }
-
-            if (existingIndex >= 0) leaderboard.splice(existingIndex, 1, nextRow)
-            else leaderboard.push(nextRow)
-
-            const ranked = rankContestLeaderboard(contest, leaderboard)
-            const userRow = ranked.find(row => row.name === submission.name)
-
-            return {
-                ...contest,
-                leaderboard: ranked,
-                results: ranking === 'accuracy'
-                    ? { ...contest.results, userRank: userRow?.rank, userAccuracy: userRow?.accuracy }
-                    : { ...contest.results, userRank: userRow?.rank, userScore: userRow?.score },
-            }
-        }),
-    })),
+        } catch {
+            // Keep optimistic local state so the UI remains usable if the backend is unavailable.
+        }
+    },
 
     getContest: (id) => get().contests.find(c => c.id === id),
     isRegistered: (id) => !!get().registered[id],
@@ -329,10 +437,15 @@ const useContestStore = create((set, get) => ({
     getProblemsForContest: (contest) => {
         if (!contest) return []
         const { customProblems } = get()
+        const problemStore = useProblemStore.getState()
         return (contest.problemIds || []).map(id => {
             const custom = customProblems.find(cp => cp.id === id)
             if (custom) return custom
-            return mockProblems.find(p => p.id === id) || null
+            return (
+                problemStore.problemDetailsById[String(id)] ||
+                problemStore.problems.find(problem => String(problem.id) === String(id)) ||
+                getSeedProblemDetail(id)
+            )
         }).filter(Boolean)
     },
 }))

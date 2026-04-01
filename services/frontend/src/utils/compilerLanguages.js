@@ -17,9 +17,9 @@ const LANGUAGE_CATALOG = {
 }
 
 const DOMAIN_LANGUAGE_KEYS = {
-    DSA: ['cpp', 'c', 'python', 'java', 'javascript', 'typescript', 'go', 'csharp', 'rust', 'kotlin'],
-    ML: ['python', 'r', 'sql', 'julia'],
-    CTF: ['python', 'bash', 'c', 'cpp', 'javascript', 'powershell'],
+    DSA: ['cpp', 'python', 'java', 'javascript'],
+    ML: ['python', 'r'],
+    CTF: ['python', 'bash', 'cpp', 'javascript'],
 }
 
 export const languageLabelMap = Object.fromEntries(

@@ -58,14 +58,7 @@ export default function ProblemSolutionsTab({ problem }) {
     const [solutionDraft, setSolutionDraft] = useState({ title: '', explanation: '', code: '' })
     const [expandedSolutions, setExpandedSolutions] = useState(() => new Set())
     const [commentDrafts, setCommentDrafts] = useState({})
-
-    useEffect(() => {
-        setSolutionSort('top')
-        setSolutionLanguage(getDefaultLanguageForDomain(problem?.domain))
-        setSolutionDraft({ title: '', explanation: '', code: '' })
-        setExpandedSolutions(new Set())
-        setCommentDrafts({})
-    }, [problem?.id, problem?.domain])
+    const [solutionPendingDelete, setSolutionPendingDelete] = useState(null)
 
     useEffect(() => {
         if (typeof window === 'undefined') return undefined
@@ -135,6 +128,29 @@ export default function ProblemSolutionsTab({ problem }) {
         if (createdId) {
             setExpandedSolutions((prev) => new Set(prev).add(createdId))
             toast.success('Published to community solutions', {
+                style: { background: 'rgba(30,36,44,0.95)', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' }
+            })
+        }
+    }
+
+    const handleConfirmDeleteSolution = () => {
+        if (!solutionPendingDelete) return
+
+        const deleted = deleteSolution({
+            problemId: problem.id,
+            domain: problem.domain,
+            solutionId: solutionPendingDelete.id,
+            actor: user,
+        })
+
+        setSolutionPendingDelete(null)
+
+        if (deleted) {
+            toast.success('Deleted', {
+                style: { background: 'rgba(30,36,44,0.95)', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' }
+            })
+        } else {
+            toast.error('Only the author can delete this solution', {
                 style: { background: 'rgba(30,36,44,0.95)', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' }
             })
         }
@@ -458,14 +474,7 @@ export default function ProblemSolutionsTab({ problem }) {
 
                                         {canDelete && (
                                             <button
-                                                onClick={() => {
-                                                    const deleted = deleteSolution({ problemId: problem.id, domain: problem.domain, solutionId: solution.id, actor: user })
-                                                    if (deleted) {
-                                                        toast.success('Deleted', { style: { background: 'rgba(30,36,44,0.95)', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' } })
-                                                    } else {
-                                                        toast.error('Only the author can delete this solution', { style: { background: 'rgba(30,36,44,0.95)', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' } })
-                                                    }
-                                                }}
+                                                onClick={() => setSolutionPendingDelete(solution)}
                                                 style={{
                                                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                                                     width: '32px', height: '32px', borderRadius: '10px',
@@ -691,6 +700,105 @@ export default function ProblemSolutionsTab({ problem }) {
                             </div>
                         )
                     })}
+                </div>
+            )}
+
+            {solutionPendingDelete && (
+                <div
+                    onMouseDown={(event) => {
+                        if (event.target === event.currentTarget) {
+                            setSolutionPendingDelete(null)
+                        }
+                    }}
+                    style={{
+                        position: 'fixed',
+                        inset: 0,
+                        zIndex: 100000,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        padding: '24px 16px',
+                        background: 'rgba(3, 7, 18, 0.72)',
+                        backdropFilter: 'blur(10px)',
+                        WebkitBackdropFilter: 'blur(10px)',
+                    }}
+                >
+                    <div
+                        style={{
+                            width: 'min(92vw, 440px)',
+                            borderRadius: '24px',
+                            padding: '24px',
+                            background: 'linear-gradient(180deg, rgba(21,26,35,0.98) 0%, rgba(12,16,24,0.98) 100%)',
+                            border: '1px solid rgba(255,255,255,0.08)',
+                            boxShadow: '0 32px 80px rgba(0,0,0,0.45)',
+                        }}
+                    >
+                        <div
+                            style={{
+                                width: '48px',
+                                height: '48px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                borderRadius: '16px',
+                                marginBottom: '18px',
+                                background: 'rgba(248,113,113,0.12)',
+                                border: '1px solid rgba(248,113,113,0.16)',
+                                color: '#fca5a5',
+                            }}
+                        >
+                            <Trash2 size={20} />
+                        </div>
+
+                        <h2
+                            style={{
+                                fontSize: '24px',
+                                fontWeight: 900,
+                                color: '#f8fafc',
+                                letterSpacing: '-0.04em',
+                                marginBottom: '10px',
+                            }}
+                        >
+                            Delete this solution?
+                        </h2>
+
+                        <p style={{ fontSize: '14px', lineHeight: 1.7, color: '#94a3b8', marginBottom: '22px' }}>
+                            You are about to delete <span style={{ color: '#f8fafc', fontWeight: 700 }}>"{solutionPendingDelete.title}"</span>.
+                            This action cannot be undone.
+                        </p>
+
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', flexWrap: 'wrap' }}>
+                            <button
+                                onClick={() => setSolutionPendingDelete(null)}
+                                style={{
+                                    padding: '11px 16px',
+                                    borderRadius: '14px',
+                                    background: 'rgba(255,255,255,0.04)',
+                                    border: '1px solid rgba(255,255,255,0.08)',
+                                    color: '#cbd5e1',
+                                    fontSize: '13px',
+                                    fontWeight: 800,
+                                }}
+                            >
+                                No
+                            </button>
+                            <button
+                                onClick={handleConfirmDeleteSolution}
+                                style={{
+                                    padding: '11px 16px',
+                                    borderRadius: '14px',
+                                    background: 'linear-gradient(135deg, rgba(248,113,113,0.18) 0%, rgba(220,38,38,0.18) 100%)',
+                                    border: '1px solid rgba(248,113,113,0.22)',
+                                    color: '#fecaca',
+                                    fontSize: '13px',
+                                    fontWeight: 800,
+                                    boxShadow: '0 12px 24px rgba(127,29,29,0.16)',
+                                }}
+                            >
+                                Yes
+                            </button>
+                        </div>
+                    </div>
                 </div>
             )}
         </div>

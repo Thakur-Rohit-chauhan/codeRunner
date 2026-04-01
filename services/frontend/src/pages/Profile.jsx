@@ -6,8 +6,8 @@ import Navbar from '../components/Navbar/Navbar'
 import useAuthStore from '../store/authStore'
 import useContestStore from '../store/contestStore'
 import useSocialStore, { computeFollowStats } from '../store/socialStore'
-import useSubmissionStore from '../store/submissionStore'
-import { mockProblems } from '../utils/mockData'
+import useProblemStore from '../store/problemStore'
+import { buildCaseSummary, countSubmissionStatuses, getSubmissionStatusMeta } from '../utils/submissionStatus'
 
 /* ── shared glassmorphism card style ── */
 const glassCard = {
@@ -16,11 +16,6 @@ const glassCard = {
     WebkitBackdropFilter: 'blur(20px)',
     border: '1px solid rgba(255, 255, 255, 0.06)',
     borderRadius: '16px',
-}
-
-const glassCardHover = {
-    ...glassCard,
-    transition: 'all 0.3s ease',
 }
 
 function formatRelativeTime(isoString) {
@@ -463,7 +458,11 @@ export default function Profile() {
     const userDirectory = useAuthStore((state) => state.users)
     const contests = useContestStore((state) => state.contests)
     const { profiles, followingByUser, syncProfile, followProfile, unfollowProfile } = useSocialStore()
-    const submissionsByUser = useSubmissionStore((state) => state.submissionsByUser)
+    const problems = useProblemStore((state) => state.problems)
+    const problemsByUsername = useProblemStore((state) => state.problemsByUsername)
+    const submissionsByUsername = useProblemStore((state) => state.submissionsByUsername)
+    const syncProblemsForUser = useProblemStore((state) => state.syncProblemsForUser)
+    const syncUserSubmissions = useProblemStore((state) => state.syncUserSubmissions)
     const { username } = useParams()
     const navigate = useNavigate()
     const [activeTab, setActiveTab] = useState('recent')
@@ -471,9 +470,32 @@ export default function Profile() {
     const [profileData, setProfileData] = useState(viewerUser)
 
     const profileUsername = username || viewerUser?.username || ''
-    const userSubmissions = submissionsByUser?.[profileUsername] || []
     const isOwnProfile = profileUsername === viewerUser?.username
     const profileUser = isOwnProfile ? viewerUser : (userDirectory?.[profileUsername] || null)
+    const profileProblems = useMemo(
+        () => (isOwnProfile ? problems : (problemsByUsername?.[profileUsername] || [])),
+        [isOwnProfile, problems, problemsByUsername, profileUsername]
+    )
+    const userSubmissions = useMemo(
+        () => submissionsByUsername?.[profileUsername] || [],
+        [profileUsername, submissionsByUsername]
+    )
+    const resolvedProfileUser = profileUser || {
+        username: profileUsername,
+        displayName: profileUsername || 'User',
+        avatar: null,
+        languages: [],
+        heatmap: true,
+        recentAC: true,
+    }
+    const resolvedProfileData = profileData || {
+        ...resolvedProfileUser,
+        skills: '',
+        heatmap: true,
+        recentAC: true,
+    }
+    const resolvedProfileProblems = useMemo(() => profileProblems || [], [profileProblems])
+    const resolvedUserSubmissions = useMemo(() => userSubmissions || [], [userSubmissions])
 
     useEffect(() => {
         if (!profileUser) return
@@ -498,51 +520,39 @@ export default function Profile() {
         syncProfile,
     ])
 
-    if (!profileUser || !profileData || !viewerUser) {
-        return (
-            <div style={{ minHeight: '100vh', background: 'linear-gradient(135deg, #0b0f19 0%, #161b22 100%)', color: '#e5e7eb', fontFamily: '"Inter", \"Roboto\", sans-serif' }}>
-                <Navbar />
-                <div style={{ maxWidth: '920px', margin: '0 auto', padding: '48px 32px' }}>
-                    <button onClick={() => navigate(-1)} style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '18px', background: 'none', border: 'none', color: '#6b7280', cursor: 'pointer', fontSize: '13.5px', fontWeight: 600, fontFamily: 'inherit', padding: 0 }}>
-                        ← Back
-                    </button>
-                    <div style={{ ...glassCard, padding: '28px', textAlign: 'center' }}>
-                        <p style={{ color: '#9ca3af', fontSize: '14px' }}>
-                            {profileUsername ? `User "${profileUsername}" was not found in the local user database.` : 'User not found.'}
-                        </p>
-                        <p style={{ marginTop: '10px', color: '#6b7280', fontSize: '13px' }}>
-                            Create an account for this username (Register) to make it appear here.
-                        </p>
-                    </div>
-                </div>
-            </div>
-        )
-    }
+    useEffect(() => {
+        if (!profileUser?.username) return
+
+        syncUserSubmissions(profileUser.username)
+        if (!isOwnProfile) {
+            syncProblemsForUser(profileUser.username)
+        }
+    }, [isOwnProfile, profileUser?.username, syncProblemsForUser, syncUserSubmissions])
 
     const directoryUsernameSet = useMemo(() => new Set(Object.keys(userDirectory || {})), [userDirectory])
 
     const ownFollowStats = useMemo(() => {
         const followers = Object.entries(followingByUser).reduce((count, [followerUsername, targets]) => {
             if (!directoryUsernameSet.has(followerUsername)) return count
-            return targets.includes(profileUser.username) ? count + 1 : count
+            return targets.includes(resolvedProfileUser.username) ? count + 1 : count
         }, 0)
-        const following = (followingByUser[profileUser.username] || [])
+        const following = (followingByUser[resolvedProfileUser.username] || [])
             .filter((candidate) => directoryUsernameSet.has(candidate)).length
-        const profile = profiles[profileUser.username] || {
-            username: profileUser.username,
-            displayName: profileUser.displayName,
-            avatar: profileUser.avatar || null,
+        const profile = profiles[resolvedProfileUser.username] || {
+            username: resolvedProfileUser.username,
+            displayName: resolvedProfileUser.displayName,
+            avatar: resolvedProfileUser.avatar || null,
         }
 
         return { followers, following, profile }
-    }, [directoryUsernameSet, followingByUser, profileUser.avatar, profileUser.displayName, profileUser.username, profiles])
+    }, [directoryUsernameSet, followingByUser, profiles, resolvedProfileUser.avatar, resolvedProfileUser.displayName, resolvedProfileUser.username])
 
-    const isFollowingProfile = !isOwnProfile && (followingByUser[viewerUser.username] || []).includes(profileUser.username)
+    const isFollowingProfile = !isOwnProfile && (followingByUser[viewerUser?.username] || []).includes(resolvedProfileUser.username)
 
-    const customSkillsArray = profileData.skills ? profileData.skills.split(',').map(s => s.trim()).filter(Boolean) : []
+    const customSkillsArray = resolvedProfileData.skills ? resolvedProfileData.skills.split(',').map(s => s.trim()).filter(Boolean) : []
     const dynamicSkills = useMemo(() => {
         const counts = {}
-        mockProblems.forEach(p => {
+        resolvedProfileProblems.forEach(p => {
             if (p.status === 'solved') {
                 p.tags.forEach(tag => {
                     counts[tag] = (counts[tag] || 0) + 1
@@ -561,16 +571,26 @@ export default function Profile() {
             else tiers[0].items.push({ name, count }) // Advanced
         })
         return tiers.filter(t => t.items.length > 0)
-    }, [])
+    }, [resolvedProfileProblems])
 
     const tabs = [
-        { id: 'recent', label: 'Recent AC', icon: <Clock style={{ width: '14px', height: '14px' }} /> },
+        { id: 'recent', label: 'Recent', icon: <Clock style={{ width: '14px', height: '14px' }} /> },
         { id: 'list', label: 'List', icon: <FileText style={{ width: '14px', height: '14px' }} /> },
         { id: 'solutions', label: 'Solutions', icon: <CheckSquare style={{ width: '14px', height: '14px' }} /> },
     ]
 
     // Generate heatmap data from the actual submission history for this profile.
-    const heatmapData = useMemo(() => buildHeatmapDataFromSubmissions(userSubmissions), [userSubmissions])
+    const heatmapData = useMemo(() => buildHeatmapDataFromSubmissions(resolvedUserSubmissions), [resolvedUserSubmissions])
+
+    const lastYearSubmissionStats = useMemo(() => {
+        const cutoff = Date.now() - (365 * 24 * 60 * 60 * 1000)
+        return countSubmissionStatuses(
+            resolvedUserSubmissions.filter((submission) => {
+                const submittedAt = new Date(submission?.submittedAt || 0).getTime()
+                return Number.isFinite(submittedAt) && submittedAt >= cutoff
+            })
+        )
+    }, [resolvedUserSubmissions])
 
     const problemSummary = useMemo(() => {
         const difficulties = {
@@ -582,7 +602,7 @@ export default function Profile() {
         let solved = 0
         let attempted = 0
 
-        mockProblems.forEach((problem) => {
+        resolvedProfileProblems.forEach((problem) => {
             if (!difficulties[problem.difficulty]) {
                 difficulties[problem.difficulty] = { total: 0, solved: 0 }
             }
@@ -606,13 +626,13 @@ export default function Profile() {
         })
 
         return {
-            total: mockProblems.length,
+            total: resolvedProfileProblems.length,
             solved,
             attempted,
             difficulties,
             domains,
         }
-    }, [])
+    }, [resolvedProfileProblems])
 
     const activeDays = heatmapData.filter(d => d.count > 0).length
     const totalSubmissions = heatmapData.reduce((acc, d) => acc + d.count, 0)
@@ -650,7 +670,7 @@ export default function Profile() {
 
             const performance = items.map((contest) => {
                 const totalParticipants = Math.max(contest.participants || 0, contest.leaderboard?.length || 0, 1)
-                const leaderboardRow = (contest.leaderboard || []).find((row) => row.name === profileUser.username) || null
+                const leaderboardRow = (contest.leaderboard || []).find((row) => row.name === resolvedProfileUser.username) || null
                 const rawRank = contest.results && isOwnProfile ? contest.results.userRank : leaderboardRow?.rank
                 const userRank = Math.min(rawRank || totalParticipants, totalParticipants)
                 const percentile = totalParticipants > 1
@@ -706,7 +726,7 @@ export default function Profile() {
 
         const participated = participatedContests.filter((contest) => {
             if (contest.results && isOwnProfile) return contest.results.userRank || contest.results.userScore || contest.results.userAccuracy
-            return (contest.leaderboard || []).some((row) => row.name === profileUser.username)
+            return (contest.leaderboard || []).some((row) => row.name === resolvedProfileUser.username)
         })
 
         const summary = summarizeContests(participated)
@@ -718,7 +738,7 @@ export default function Profile() {
                 title: contest.title,
                 rank: contest.results && isOwnProfile
                     ? contest.results.userRank || null
-                    : (contest.leaderboard || []).find((row) => row.name === profileUser.username)?.rank || null,
+                    : (contest.leaderboard || []).find((row) => row.name === resolvedProfileUser.username)?.rank || null,
             }
         })
 
@@ -726,39 +746,43 @@ export default function Profile() {
             ...summary,
             history: history.length > 0 ? history : [{ date: 'Start', rating: summary.rating, title: 'No contests yet', rank: null }],
         }
-    }, [contests, isOwnProfile, profileUser.username])
+    }, [contests, isOwnProfile, resolvedProfileUser.username])
 
     const languageStats = useMemo(() => {
-        const langs = profileUser.languages || []
+        const langs = resolvedProfileUser.languages || []
         return [...langs].sort((a, b) => (b.count || 0) - (a.count || 0))
-    }, [profileUser.languages])
+    }, [resolvedProfileUser.languages])
 
     const problemLookup = useMemo(
-        () => new Map(mockProblems.map((problem) => [problem.title, problem])),
-        []
+        () => new Map(resolvedProfileProblems.map((problem) => [problem.title, problem])),
+        [resolvedProfileProblems]
     )
 
     const recentSubmissionRows = useMemo(() => (
-        userSubmissions.map((submission) => {
+        resolvedUserSubmissions.map((submission) => {
             const linkedProblem = submission.problemId
                 ? { id: submission.problemId }
                 : problemLookup.get(submission.problemTitle)
             const status = submission.status || 'Unknown'
             const runtime = submission.runtime || ''
+            const statusMeta = getSubmissionStatusMeta(status)
+            const caseSummary = buildCaseSummary(submission)
 
             return {
                 id: `recent-${submission.id}`,
                 title: submission.problemTitle || 'Untitled problem',
-                subtitle: `${submission.language || '—'} • ${status}${runtime ? ` • ${runtime}` : ''}`,
+                subtitle: [submission.language || '—', status, runtime, caseSummary].filter(Boolean).join(' • '),
                 time: formatRelativeTime(submission.submittedAt),
-                dotColor: status.toLowerCase() === 'accepted' ? '#34d399' : '#f87171',
+                dotColor: statusMeta.dotColor,
+                statusLabel: status,
+                statusMeta,
                 href: linkedProblem ? `/problems/${linkedProblem.id}` : null,
             }
         })
-    ), [problemLookup, userSubmissions])
+    ), [problemLookup, resolvedUserSubmissions])
 
     const bookmarkedRows = useMemo(() => (
-        mockProblems
+        resolvedProfileProblems
             .filter((problem) => problem.starred)
             .sort((a, b) => {
                 if (!a.lastSubmitted && !b.lastSubmitted) return a.id - b.id
@@ -774,10 +798,10 @@ export default function Profile() {
                 dotColor: '#60a5fa',
                 href: `/problems/${problem.id}`,
             }))
-    ), [])
+    ), [resolvedProfileProblems])
 
     const solutionRows = useMemo(() => (
-        mockProblems
+        resolvedProfileProblems
             .filter((problem) => problem.status === 'solved')
             .sort((a, b) => {
                 if (!a.lastSubmitted && !b.lastSubmitted) return a.id - b.id
@@ -793,7 +817,7 @@ export default function Profile() {
                 dotColor: '#34d399',
                 href: `/problems/${problem.id}`,
             }))
-    ), [])
+    ), [resolvedProfileProblems])
 
     const tabContent = useMemo(() => ({
         recent: {
@@ -820,6 +844,27 @@ export default function Profile() {
     const previewRows = currentTabContent.rows.slice(0, 5)
     const totalRows = currentTabContent.rows.length
     const actionLabel = `View all ${totalRows} ${currentTabContent.noun}${totalRows === 1 ? '' : 's'} →`
+
+    if (!profileUser || !profileData || !viewerUser) {
+        return (
+            <div style={{ minHeight: '100vh', background: 'linear-gradient(135deg, #0b0f19 0%, #161b22 100%)', color: '#e5e7eb', fontFamily: '"Inter", "Roboto", sans-serif' }}>
+                <Navbar />
+                <div style={{ maxWidth: '920px', margin: '0 auto', padding: '48px 32px' }}>
+                    <button onClick={() => navigate(-1)} style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '18px', background: 'none', border: 'none', color: '#6b7280', cursor: 'pointer', fontSize: '13.5px', fontWeight: 600, fontFamily: 'inherit', padding: 0 }}>
+                        ← Back
+                    </button>
+                    <div style={{ ...glassCard, padding: '28px', textAlign: 'center' }}>
+                        <p style={{ color: '#9ca3af', fontSize: '14px' }}>
+                            {profileUsername ? `User "${profileUsername}" was not found in the local user directory.` : 'User not found.'}
+                        </p>
+                        <p style={{ marginTop: '10px', color: '#6b7280', fontSize: '13px' }}>
+                            Create an account for this username to make it appear here.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        )
+    }
 
     const handleRowNavigation = (href) => {
         if (!href) return
@@ -1185,10 +1230,39 @@ export default function Profile() {
                                     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                                     marginBottom: '16px',
                                 }}>
-                                    <h3 style={{ fontSize: '15px', fontWeight: 600, color: '#e5e7eb' }}>
-                                        <span style={{ color: '#fff', fontWeight: 700 }}>{totalSubmissions}</span>
-                                        <span style={{ color: '#9ca3af', fontWeight: 400 }}> submissions in the past one year</span>
-                                    </h3>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                        <h3 style={{ fontSize: '15px', fontWeight: 600, color: '#e5e7eb' }}>
+                                            <span style={{ color: '#fff', fontWeight: 700 }}>{totalSubmissions}</span>
+                                            <span style={{ color: '#9ca3af', fontWeight: 400 }}> submissions in the past one year</span>
+                                        </h3>
+                                        {lastYearSubmissionStats.entries.length > 0 && (
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                                {lastYearSubmissionStats.entries.slice(0, 4).map(([status, count]) => {
+                                                    const statusMeta = getSubmissionStatusMeta(status)
+                                                    return (
+                                                        <span
+                                                            key={status}
+                                                            style={{
+                                                                display: 'inline-flex',
+                                                                alignItems: 'center',
+                                                                gap: '6px',
+                                                                padding: '5px 9px',
+                                                                borderRadius: '999px',
+                                                                fontSize: '11.5px',
+                                                                fontWeight: 700,
+                                                                color: statusMeta.color,
+                                                                background: statusMeta.bg,
+                                                                border: `1px solid ${statusMeta.border}`,
+                                                            }}
+                                                        >
+                                                            {status}
+                                                            <span style={{ color: '#d1d5db' }}>{count}</span>
+                                                        </span>
+                                                    )
+                                                })}
+                                            </div>
+                                        )}
+                                    </div>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '20px', fontSize: '12.5px', color: '#6b7280' }}>
                                         <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
                                             <Calendar style={{ width: '14px', height: '14px' }} />
@@ -1305,11 +1379,40 @@ export default function Profile() {
                                                     width: '6px', height: '6px', borderRadius: '50%',
                                                     backgroundColor: row.dotColor,
                                                 }} />
-                                                <span style={{
-                                                    fontSize: '14px', fontWeight: 500, color: '#e5e7eb',
-                                                }}>{row.title}</span>
+                                                <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                                    <span style={{
+                                                        fontSize: '14px', fontWeight: 500, color: '#e5e7eb',
+                                                        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                                                    }}>{row.title}</span>
+                                                    <span style={{
+                                                        fontSize: '12.5px',
+                                                        color: '#6b7280',
+                                                        whiteSpace: 'nowrap',
+                                                        overflow: 'hidden',
+                                                        textOverflow: 'ellipsis',
+                                                    }}>
+                                                        {row.subtitle}
+                                                    </span>
+                                                </div>
                                             </div>
-                                            <span style={{ fontSize: '13px', color: '#6b7280' }}>{row.time}</span>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
+                                                {row.statusLabel && (
+                                                    <span style={{
+                                                        display: 'inline-flex',
+                                                        alignItems: 'center',
+                                                        padding: '4px 8px',
+                                                        borderRadius: '999px',
+                                                        fontSize: '11px',
+                                                        fontWeight: 700,
+                                                        color: row.statusMeta.color,
+                                                        background: row.statusMeta.bg,
+                                                        border: `1px solid ${row.statusMeta.border}`,
+                                                    }}>
+                                                        {row.statusLabel}
+                                                    </span>
+                                                )}
+                                                <span style={{ fontSize: '13px', color: '#6b7280' }}>{row.time}</span>
+                                            </div>
                                         </div>
                                     )) : (
                                         <div style={{ padding: '20px 24px', color: '#6b7280', fontSize: '13.5px' }}>
@@ -1432,7 +1535,24 @@ export default function Profile() {
                                         </div>
                                     </div>
                                     <div style={{ fontSize: '12.5px', color: '#94a3b8', flexShrink: 0 }}>
-                                        {row.time}
+                                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '6px' }}>
+                                            {row.statusLabel && (
+                                                <span style={{
+                                                    display: 'inline-flex',
+                                                    alignItems: 'center',
+                                                    padding: '4px 8px',
+                                                    borderRadius: '999px',
+                                                    fontSize: '11px',
+                                                    fontWeight: 700,
+                                                    color: row.statusMeta.color,
+                                                    background: row.statusMeta.bg,
+                                                    border: `1px solid ${row.statusMeta.border}`,
+                                                }}>
+                                                    {row.statusLabel}
+                                                </span>
+                                            )}
+                                            <span>{row.time}</span>
+                                        </div>
                                     </div>
                                 </div>
                             )) : (

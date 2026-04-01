@@ -4,8 +4,8 @@ import Navbar from '../components/Navbar/Navbar'
 import { Search, Play, Bookmark, Share2, HelpCircle, CheckCircle2, Lock, ArrowLeft, ArrowUpDown, Filter, Check, EyeOff, Plus, Minus, ChevronDown, RefreshCw } from 'lucide-react'
 import { PieChart, Pie, Cell } from 'recharts'
 import toast, { Toaster } from 'react-hot-toast'
-import { mockProblems } from '../utils/mockData'
 import useAuthStore from '../store/authStore'
+import useProblemStore from '../store/problemStore'
 
 // Theme constants
 const COLORS = {
@@ -32,6 +32,8 @@ export default function ListPage() {
     const { listId } = useParams()
     const navigate = useNavigate()
     const user = useAuthStore((state) => state.user)
+    const problems = useProblemStore((state) => state.problems)
+    const toggleBookmark = useProblemStore((state) => state.toggleBookmark)
     const [searchQuery, setSearchQuery] = useState('')
     
     // Sort & Filter state
@@ -40,7 +42,6 @@ export default function ListPage() {
     const [filterRules, setFilterRules] = useState([]) // Array of { id, active, field, operator, value }
     const [isSortMenuOpen, setIsSortMenuOpen] = useState(false)
     const [isFilterMenuOpen, setIsFilterMenuOpen] = useState(false)
-    const [updateTrigger, setUpdateTrigger] = useState(0)
 
     // Helper for filter options
     const FILTER_FIELDS = {
@@ -57,10 +58,10 @@ export default function ListPage() {
 
     // Filter problems that match the list
     const listProblems = useMemo(() => {
-        if (currentListId === 'bookmarks') return mockProblems.filter(p => p.starred)
+        if (currentListId === 'bookmarks') return problems.filter(p => p.starred)
         // Future scalable lists could filter by p.listId or similar
-        return mockProblems
-    }, [currentListId, updateTrigger])
+        return problems
+    }, [currentListId, problems])
 
     // Compute stats
     const stats = useMemo(() => {
@@ -151,7 +152,7 @@ export default function ListPage() {
         })
 
         return result
-    }, [listProblems, searchQuery, filterRules, filterMatchMode, sortConfig, updateTrigger])
+    }, [listProblems, searchQuery, filterRules, filterMatchMode, sortConfig])
 
     // Recharts data for the Donut
     const chartData = [
@@ -621,10 +622,9 @@ export default function ListPage() {
                                     <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', alignItems: 'center', color: COLORS.textMuted }}>
                                         {index % 3 === 0 && <Lock style={{ width: '14px', height: '14px', fill: 'currentColor' }} />}
                                         <button 
-                                            onClick={(e) => { 
-                                                e.stopPropagation(); 
-                                                p.starred = !p.starred; 
-                                                setUpdateTrigger(prev => prev + 1); 
+                                            onClick={async (e) => {
+                                                e.stopPropagation()
+                                                await toggleBookmark(p.id, user?.username)
                                             }} 
                                             style={{ 
                                                 background: 'none', border: 'none', cursor: 'pointer', padding: 0, 

@@ -102,12 +102,13 @@ export default function Register() {
     })
     const [showPw, setShowPw] = useState(false)
     const [agreedTerms, setAgreedTerms] = useState(false)
-    const { mockLogin } = useAuthStore()
+    const registerAccount = useAuthStore((state) => state.registerAccount)
+    const socialLogin = useAuthStore((state) => state.socialLogin)
     const navigate = useNavigate()
 
     const update = (field) => (e) => setForm({ ...form, [field]: e.target.value })
 
-    const handleSubmit = (e) => {
+    const handleSubmit = async (e) => {
         e.preventDefault()
         if (!form.fullName || !form.username || !form.email || !form.password || !form.confirmPassword) {
             return toast.error('Please fill in all fields')
@@ -118,20 +119,36 @@ export default function Register() {
         if (!agreedTerms) {
             return toast.error('You must agree to the Terms of Service')
         }
-        mockLogin({ username: form.username, email: form.email, displayName: form.fullName })
-        toast.success('Account created successfully!')
-        navigate('/problems')
+
+        try {
+            await registerAccount({
+                username: form.username,
+                email: form.email,
+                password: form.password,
+                displayName: form.fullName,
+            })
+            toast.success('Account created successfully!')
+            navigate('/problems')
+        } catch (error) {
+            toast.error(error.response?.data?.detail || 'Unable to create account')
+        }
     }
 
-    const handleGoogle = () => {
+    const handleGoogle = async () => {
         const fallbackKey = form.username || `google_${Date.now()}`
-        mockLogin({
-            username: fallbackKey,
-            email: form.email || `${fallbackKey}@coderunner.dev`,
-            displayName: form.fullName || 'Google User',
-        })
-        toast.success('Signed in with Google')
-        navigate('/problems')
+
+        try {
+            await socialLogin({
+                username: fallbackKey,
+                email: form.email || `${fallbackKey}@coderunner.dev`,
+                displayName: form.fullName || 'Google User',
+                provider: 'google',
+            })
+            toast.success('Signed in with Google')
+            navigate('/problems')
+        } catch (error) {
+            toast.error(error.response?.data?.detail || 'Google sign-in failed')
+        }
     }
 
     const fields = [

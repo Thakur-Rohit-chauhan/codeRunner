@@ -1,13 +1,14 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
     Shield, ChevronLeft, ChevronRight, Clock, Send, CheckCircle,
-    XCircle, Loader, AlertTriangle, Trophy, Swords, Play,
+    XCircle, Loader, AlertTriangle, Trophy, Play,
     RotateCcw, Maximize2, Minimize2, ChevronDown, Code2, Target
 } from 'lucide-react'
 import useContestStore from '../store/contestStore'
 import useAuthStore from '../store/authStore'
-import { getProblemDetail } from '../utils/mockData'
+import useProblemStore from '../store/problemStore'
+import api from '../services/api'
 import { getDefaultLanguageForDomain, getLanguagesForDomain, getStarterCodeForLanguage } from '../utils/compilerLanguages'
 
 // ─── Countdown Timer ──────────────────────────────────────────────────────────
@@ -39,6 +40,99 @@ function formatElapsed(seconds) {
     return `${secs}s`
 }
 
+function mapJudgeStatus(status = '') {
+    const normalized = status.toLowerCase()
+    if (normalized === 'accepted') return 'accepted'
+    if (normalized.includes('time limit')) return 'tle'
+    if (normalized.includes('runtime') || normalized.includes('compilation') || normalized.includes('error')) return 'error'
+    return 'wrong'
+}
+
+function extractContestMetric(stdout = '') {
+    const preferredPatterns = [
+        /hidden_test_accuracy\s*[:=]\s*(-?\d+(?:\.\d+)?)\s*%?/i,
+        /val_accuracy\s*[:=]\s*(-?\d+(?:\.\d+)?)\s*%?/i,
+        /accuracy\s*[:=]\s*(-?\d+(?:\.\d+)?)\s*%?/i,
+        /macro_f1\s*[:=]\s*(-?\d+(?:\.\d+)?)\s*%?/i,
+        /\bf1\b\s*[:=]\s*(-?\d+(?:\.\d+)?)\s*%?/i,
+        /score\s*[:=]\s*(-?\d+(?:\.\d+)?)\s*%?/i,
+        /precision\s*[:=]\s*(-?\d+(?:\.\d+)?)\s*%?/i,
+        /recall\s*[:=]\s*(-?\d+(?:\.\d+)?)\s*%?/i,
+    ]
+
+    for (const pattern of preferredPatterns) {
+        const match = stdout.match(pattern)
+        if (match) {
+            const value = Number(match[1])
+            return Number.isFinite(value) ? (value > 1 ? value / 100 : value) : 0
+        }
+    }
+
+    const percentMatch = stdout.match(/(-?\d+(?:\.\d+)?)\s*%/)
+    if (percentMatch) {
+        const value = Number(percentMatch[1])
+        return Number.isFinite(value) ? value / 100 : 0
+    }
+
+    const numericValues = [...stdout.matchAll(/-?\d+(?:\.\d+)?/g)]
+        .map((match) => Number(match[0]))
+        .filter((value) => Number.isFinite(value) && value >= 0)
+
+    if (!numericValues.length) return 0
+
+    const candidate = Math.max(...numericValues)
+    return candidate > 1 ? Math.min(candidate / 100, 1) : Math.min(candidate, 1)
+}
+
+function buildJudgeMetrics(result, isMlContest) {
+    const metrics = []
+
+    if (isMlContest && result?.stdout) {
+        result.stdout
+            .split('\n')
+            .map((line) => line.trim())
+            .filter(Boolean)
+            .forEach((line) => {
+                const separator = line.includes('=') ? '=' : (line.includes(':') ? ':' : null)
+                if (!separator) return
+                const [rawLabel, ...rawValue] = line.split(separator)
+                const value = rawValue.join(separator).trim()
+                if (!value) return
+                metrics.push({
+                    label: rawLabel.replace(/[_-]+/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase()),
+                    value,
+                })
+            })
+    }
+
+    if (result?.time) {
+        metrics.push({ label: 'Time', value: result.time })
+    }
+    if (result?.memory && result.memory !== 'N/A') {
+        metrics.push({ label: 'Memory', value: result.memory })
+    }
+
+    return metrics.slice(0, 5)
+}
+
+function buildJudgeOutput(result, detail, isMlContest) {
+    return {
+        type: result?.allPassed ? 'success' : 'error',
+        message: result?.allPassed
+            ? (isMlContest ? 'Validation accepted' : 'All visible tests passed')
+            : (result?.status || 'Judge request failed'),
+        metrics: buildJudgeMetrics(result, isMlContest),
+        stdout: result?.stdout || '',
+        stderr: result?.stderr || '',
+        cases: (result?.cases || []).map((caseResult) => ({
+            input: detail?.testCases?.[caseResult.index - 1]?.input || `Case ${caseResult.index}`,
+            expected: caseResult.expected,
+            got: caseResult.stdout || '∅',
+            passed: caseResult.status === 'Accepted',
+        })),
+    }
+}
+
 // ─── Submission status pill ───────────────────────────────────────────────────
 const statusMeta = {
     accepted:    { color: '#34d399', bg: 'rgba(52,211,153,0.12)',  border: 'rgba(52,211,153,0.25)',  icon: <CheckCircle size={13} />,    label: 'Accepted' },
@@ -63,6 +157,7 @@ export default function ContestArena() {
     const { contestId } = useParams()
     const navigate = useNavigate()
     const { user } = useAuthStore()
+    const problemDetailsById = useProblemStore((state) => state.problemDetailsById)
     const { getContest, getProblemsForContest, activeAttempt, saveAnswer, endAttempt, recordContestResult } = useContestStore()
     const contest = getContest(contestId)
 
@@ -84,20 +179,31 @@ export default function ContestArena() {
 
     // Redirect if no active attempt
     useEffect(() => {
-        if (!activeAttempt || activeAttempt.contestId !== contestId) {
+        if (!finished && (!activeAttempt || activeAttempt.contestId !== contestId)) {
             navigate(`/contests/${contestId}`)
         }
-    }, [activeAttempt, contestId])
+    }, [activeAttempt, contestId, finished, navigate])
 
-    if (!contest) return null
-    const problems = getProblemsForContest(contest)
+    const problems = contest ? getProblemsForContest(contest) : []
     const currentProblem = problems[problemIdx]
-    const detail = currentProblem ? (currentProblem.isCustom ? currentProblem : getProblemDetail(currentProblem.id)) : null
-    const contestDomain = contest.domain || problems[0]?.domain || 'DSA'
-    const isMlContest = contest.ranking === 'accuracy' || contestDomain === 'ML'
-    const availableLanguages = useMemo(() => getLanguagesForDomain(contestDomain), [contestDomain])
+    const detail = currentProblem
+        ? (currentProblem.isCustom ? currentProblem : (problemDetailsById[String(currentProblem.id)] || currentProblem))
+        : null
+    const contestDomain = contest?.domain || problems[0]?.domain || 'DSA'
+    const isMlContest = contest?.ranking === 'accuracy' || contestDomain === 'ML'
+    const availableLanguages = getLanguagesForDomain(contestDomain)
     const currentLang = availableLanguages.find(language => language.key === lang) || availableLanguages[0]
     const elapsedSeconds = Math.max(0, (contest?.duration || 90) * 60 - remaining)
+    const savedCodeForCurrentProblem = currentProblem
+        ? (activeAttempt?.answers?.[currentProblem.id]?.[lang] || '')
+        : ''
+
+    useEffect(() => {
+        const defaultLanguage = getDefaultLanguageForDomain(contestDomain)
+        if (!availableLanguages.some((language) => language.key === lang)) {
+            setLang(defaultLanguage)
+        }
+    }, [availableLanguages, contestDomain, lang])
 
     // Load code from answers store when switching problems
     useEffect(() => {
@@ -105,95 +211,147 @@ export default function ContestArena() {
             const saved = activeAttempt?.answers?.[currentProblem.id]?.[lang]
             setCode(saved || getStarterCodeForLanguage(detail, lang))
         }
-    }, [problemIdx, lang, currentProblem?.id, detail, activeAttempt])
-
-    useEffect(() => {
-        if (!availableLanguages.some(language => language.key === lang)) {
-            setLang(getDefaultLanguageForDomain(contestDomain))
-        }
-    }, [availableLanguages, contestDomain, lang])
+    }, [activeAttempt, currentProblem, detail, lang, problemIdx])
 
     // Auto-save on change
     useEffect(() => {
         if (currentProblem) {
+            if (savedCodeForCurrentProblem === code) {
+                return
+            }
             const merged = {
                 ...(activeAttempt?.answers?.[currentProblem.id] || {}),
                 [lang]: code,
             }
             saveAnswer(currentProblem.id, merged)
         }
-    }, [code])
+    }, [activeAttempt?.answers, code, currentProblem, lang, saveAnswer, savedCodeForCurrentProblem])
 
-    const handleRun = useCallback(() => {
+    const judgeContestProblem = async (mode) => {
+        if (!detail) {
+            throw new Error('Problem details are unavailable')
+        }
+
+        const response = await api.post(`/submission/${mode}`, {
+            problem: {
+                id: detail.id,
+                title: detail.title,
+                domain: detail.domain || contestDomain,
+                starterCode: detail.starterCode || {},
+                testCases: detail.testCases || [],
+            },
+            language: lang,
+            code,
+        })
+
+        return response.data
+    }
+
+    const handleRun = async () => {
+        if (!currentProblem) return
         setIsRunning(true)
         setRunOutput(null)
-        setTimeout(() => {
-            if (isMlContest) {
-                const accuracy = 0.72 + Math.random() * 0.2
-                setRunOutput({
-                    type: 'success',
-                    message: `Validation complete: ${formatAccuracy(accuracy)} accuracy`,
-                    metrics: [
-                        { label: 'Accuracy', value: formatAccuracy(accuracy) },
-                        { label: 'Loss', value: (0.35 + Math.random() * 0.25).toFixed(3) },
-                        { label: 'Runtime', value: `${45 + Math.floor(Math.random() * 35)}s` },
-                    ],
-                })
-            } else {
-                const pass = Math.random() > 0.3
-                setRunOutput(pass
-                    ? { type: 'success', message: '✓ All sample test cases passed!', cases: [{ input: detail?.testCases?.[0]?.input || 'sample', expected: detail?.testCases?.[0]?.expectedOutput || 'ok', got: detail?.testCases?.[0]?.expectedOutput || 'ok', passed: true }] }
-                    : { type: 'error', message: '✗ Test case failed', cases: [{ input: detail?.testCases?.[0]?.input || 'sample', expected: detail?.testCases?.[0]?.expectedOutput || 'ok', got: 'null', passed: false }] }
-                )
-            }
+        try {
+            const result = await judgeContestProblem('run')
+            setRunOutput(buildJudgeOutput(result, detail, isMlContest))
+        } catch (error) {
+            setRunOutput({
+                type: 'error',
+                message: 'Judge request failed',
+                metrics: [],
+                stdout: '',
+                stderr: error.response?.data?.detail || error.message || 'Submission service is unavailable',
+                cases: [],
+            })
+        } finally {
             setIsRunning(false)
-        }, 1400)
-    }, [detail, isMlContest])
+        }
+    }
 
-    const handleSubmit = useCallback(() => {
+    const handleSubmit = async () => {
         if (!currentProblem) return
         setIsSubmitting(true)
-        setSubmissions(s => ({ ...s, [currentProblem.id]: { status: 'submitting', time: new Date().toLocaleTimeString() } }))
-        setTimeout(() => {
-            if (isMlContest) {
-                const accuracy = 0.74 + Math.random() * 0.21
-                setSubmissions(s => {
-                    const previous = s[currentProblem.id] || {}
+        setSubmissions((state) => ({
+            ...state,
+            [currentProblem.id]: {
+                ...(state[currentProblem.id] || {}),
+                status: 'submitting',
+                lastSubmittedAt: new Date().toLocaleTimeString(),
+            },
+        }))
+
+        try {
+            const result = await judgeContestProblem('submit')
+            const mappedStatus = mapJudgeStatus(result?.status)
+            const currentAccuracy = isMlContest ? extractContestMetric(result?.stdout || '') : 0
+            const acceptedAccuracy = mappedStatus === 'accepted' ? currentAccuracy : 0
+
+            setSubmissions((state) => {
+                const previous = state[currentProblem.id] || {}
+
+                if (isMlContest) {
                     const previousBest = previous.accuracy || 0
-                    const nextBest = Math.max(previousBest, accuracy)
-                    const bestTimeSeconds = accuracy > previousBest
+                    const nextBest = Math.max(previousBest, acceptedAccuracy)
+                    const bestTimeSeconds = acceptedAccuracy > previousBest
                         ? elapsedSeconds
                         : (previous.timeSeconds ?? elapsedSeconds)
+
                     return {
-                        ...s,
+                        ...state,
                         [currentProblem.id]: {
-                            status: 'accepted',
+                            status: mappedStatus,
                             accuracy: nextBest,
-                            lastAccuracy: accuracy,
+                            lastAccuracy: acceptedAccuracy,
                             submissions: (previous.submissions || 0) + 1,
                             time: formatElapsed(bestTimeSeconds),
                             timeSeconds: bestTimeSeconds,
                             lastSubmittedAt: new Date().toLocaleTimeString(),
                         },
                     }
-                })
-                setRunOutput({
-                    type: 'success',
-                    message: `Submission accepted at ${formatAccuracy(accuracy)}`,
-                    metrics: [
-                        { label: 'Current Accuracy', value: formatAccuracy(accuracy) },
-                        { label: 'Leaderboard Metric', value: formatAccuracy(accuracy) },
-                        { label: 'Best Time', value: formatElapsed(elapsedSeconds) },
-                    ],
-                })
-            } else {
-                const outcomes = ['accepted', 'accepted', 'accepted', 'wrong', 'tle', 'error']
-                const outcome = outcomes[Math.floor(Math.random() * outcomes.length)]
-                setSubmissions(s => ({ ...s, [currentProblem.id]: { status: outcome, time: new Date().toLocaleTimeString(), timeSeconds: elapsedSeconds } }))
+                }
+
+                return {
+                    ...state,
+                    [currentProblem.id]: {
+                        ...(previous || {}),
+                        status: mappedStatus,
+                        submissions: (previous.submissions || 0) + 1,
+                        time: result?.time || formatElapsed(elapsedSeconds),
+                        timeSeconds: elapsedSeconds,
+                        lastSubmittedAt: new Date().toLocaleTimeString(),
+                    },
+                }
+            })
+
+            const nextOutput = buildJudgeOutput(result, detail, isMlContest)
+            if (isMlContest && mappedStatus === 'accepted') {
+                nextOutput.message = `Submission accepted at ${formatAccuracy(acceptedAccuracy)}`
             }
+            setRunOutput(nextOutput)
+        } catch (error) {
+            setSubmissions((state) => ({
+                ...state,
+                [currentProblem.id]: {
+                    ...(state[currentProblem.id] || {}),
+                    status: 'error',
+                    submissions: (state[currentProblem.id]?.submissions || 0) + 1,
+                    time: 'N/A',
+                    timeSeconds: elapsedSeconds,
+                    lastSubmittedAt: new Date().toLocaleTimeString(),
+                },
+            }))
+            setRunOutput({
+                type: 'error',
+                message: 'Submission failed',
+                metrics: [],
+                stdout: '',
+                stderr: error.response?.data?.detail || error.message || 'Submission service is unavailable',
+                cases: [],
+            })
+        } finally {
             setIsSubmitting(false)
-        }, 2000)
-    }, [currentProblem, elapsedSeconds, isMlContest])
+        }
+    }
 
     const handleFinish = () => {
         const participantName = user?.username || 'coderunner'
@@ -232,10 +390,12 @@ export default function ContestArena() {
                 timeSeconds: elapsedSeconds,
             })
         }
-        endAttempt()
         setFinished(true)
+        endAttempt()
         setTimeout(() => navigate(`/contests/${contestId}`), 3000)
     }
+
+    if (!contest) return null
 
     // Timer urgency effect
     const timerColor = remaining === 0 ? '#ef4444' : isUrgent ? '#f59e0b' : '#34d399'
@@ -425,6 +585,18 @@ export default function ContestArena() {
                                     <span>{metric.value}</span>
                                 </div>
                             ))}
+                            {runOutput.stdout && (
+                                <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '8px', padding: '10px 14px', marginTop: '8px', marginBottom: '6px' }}>
+                                    <p style={{ color: '#e5e7eb', fontSize: '12px', fontWeight: 700, marginBottom: '6px' }}>Stdout</p>
+                                    <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontSize: '12.5px', lineHeight: 1.6, fontFamily: 'monospace', color: '#9ca3af' }}>{runOutput.stdout}</pre>
+                                </div>
+                            )}
+                            {runOutput.stderr && (
+                                <div style={{ background: 'rgba(248,113,113,0.05)', border: '1px solid rgba(248,113,113,0.15)', borderRadius: '8px', padding: '10px 14px', marginTop: '8px', marginBottom: '6px' }}>
+                                    <p style={{ color: '#f87171', fontSize: '12px', fontWeight: 700, marginBottom: '6px' }}>Stderr</p>
+                                    <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontSize: '12.5px', lineHeight: 1.6, fontFamily: 'monospace', color: '#fca5a5' }}>{runOutput.stderr}</pre>
+                                </div>
+                            )}
                             {runOutput.cases?.map((c, i) => (
                                 <div key={i} style={{ background: c.passed ? 'rgba(52,211,153,0.05)' : 'rgba(248,113,113,0.05)', border: `1px solid ${c.passed ? 'rgba(52,211,153,0.15)' : 'rgba(248,113,113,0.15)'}`, borderRadius: '8px', padding: '10px 14px', marginBottom: '6px', fontSize: '13px', fontFamily: 'monospace', color: '#9ca3af' }}>
                                     <span style={{ color: c.passed ? '#34d399' : '#f87171', fontWeight: 700, marginRight: '8px' }}>{c.passed ? '✓' : '✗'}</span>

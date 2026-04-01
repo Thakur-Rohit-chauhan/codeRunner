@@ -8,14 +8,23 @@ import {
 } from 'lucide-react'
 import Navbar from '../components/Navbar/Navbar'
 import useContestStore from '../store/contestStore'
-import { mockProblems } from '../utils/mockData'
+import useAuthStore from '../store/authStore'
+import useProblemStore from '../store/problemStore'
+import {
+    getAggregatePrizePool,
+    getContestPhase,
+    getContestUserStats,
+    getPrizeUnit,
+} from '../utils/contestUtils'
 
 // ─── Countdown Hook ───────────────────────────────────────────────────────────
 function useCountdown(isoDate) {
     const [t, setT] = useState({})
     useEffect(() => {
         const calc = () => {
-            const diff = new Date(isoDate) - Date.now()
+            const target = new Date(isoDate).getTime()
+            if (!isoDate || Number.isNaN(target)) return setT({ d: 0, h: 0, m: 0, s: 0, over: true })
+            const diff = target - Date.now()
             if (diff <= 0) return setT({ d: 0, h: 0, m: 0, s: 0, over: true })
             setT({ d: Math.floor(diff / 86400000), h: Math.floor((diff % 86400000) / 3600000), m: Math.floor((diff % 3600000) / 60000), s: Math.floor((diff % 60000) / 1000) })
         }
@@ -24,6 +33,21 @@ function useCountdown(isoDate) {
         return () => clearInterval(id)
     }, [isoDate])
     return t
+}
+
+function useNow(intervalMs = 1000) {
+    const [now, setNow] = useState(0)
+
+    useEffect(() => {
+        const frame = requestAnimationFrame(() => setNow(Date.now()))
+        const id = setInterval(() => setNow(Date.now()), intervalMs)
+        return () => {
+            cancelAnimationFrame(frame)
+            clearInterval(id)
+        }
+    }, [intervalMs])
+
+    return now
 }
 
 // ─── Countdown Display ────────────────────────────────────────────────────────
@@ -62,17 +86,17 @@ function TypeBadge({ type }) {
 // ─── Upcoming Contest Card ────────────────────────────────────────────────────
 function UpcomingCard({ contest, featured }) {
     const navigate = useNavigate()
+    const user = useAuthStore((state) => state.user)
     const [hovered, setHovered] = useState(false)
     const { registerContest, unregisterContest, isRegistered, startAttempt } = useContestStore()
     const reg = isRegistered(contest.id)
-    const cd = useCountdown(contest.startTime)
-    const isLive = cd.over
+    const isLive = getContestPhase(contest) === 'active'
 
-    const handleBtn = (e) => {
+    const handleBtn = async (e) => {
         e.stopPropagation()
         if (isLive && reg) { startAttempt(contest.id); navigate(`/contests/${contest.id}/arena`) }
-        else if (reg) unregisterContest(contest.id)
-        else registerContest(contest.id)
+        else if (reg) await unregisterContest(contest.id, user?.username)
+        else await registerContest(contest.id, user?.username)
     }
 
     return (
@@ -98,12 +122,12 @@ function UpcomingCard({ contest, featured }) {
             </div>
 
             <div style={{ display: 'flex', gap: '6px', marginBottom: '16px', flexWrap: 'wrap' }}>
-                {contest.tags.map(tag => <span key={tag} style={{ fontSize: '11.5px', color: '#9ca3af', fontWeight: 500, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)', padding: '3px 10px', borderRadius: '8px' }}>{tag}</span>)}
+                {(contest.tags || []).map(tag => <span key={tag} style={{ fontSize: '11.5px', color: '#9ca3af', fontWeight: 500, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)', padding: '3px 10px', borderRadius: '8px' }}>{tag}</span>)}
             </div>
 
             <div style={{ display: 'flex', gap: '20px', marginBottom: '18px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#9ca3af', fontSize: '13px' }}><Target size={13} /><span>{contest.problemIds.length} Problems</span></div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#9ca3af', fontSize: '13px' }}><Users size={13} /><span>{contest.participants.toLocaleString()} Registered</span></div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#9ca3af', fontSize: '13px' }}><Target size={13} /><span>{contest.problemIds?.length || 0} Problems</span></div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#9ca3af', fontSize: '13px' }}><Users size={13} /><span>{(contest.participants || 0).toLocaleString()} Registered</span></div>
             </div>
 
             {!isLive && (
@@ -113,10 +137,13 @@ function UpcomingCard({ contest, featured }) {
                 </div>
             )}
 
-            {contest.prizes && (
+            {contest.prizes?.length > 0 && (
                 <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '10px', padding: '10px 14px', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <Crown size={13} style={{ color: '#f59e0b', flexShrink: 0 }} />
-                    <span style={{ fontSize: '12.5px', color: '#9ca3af' }}><span style={{ color: '#f59e0b', fontWeight: 600 }}>1st:</span> {contest.prizes[0]} · <span>2nd: {contest.prizes[1]}</span></span>
+                    <span style={{ fontSize: '12.5px', color: '#9ca3af' }}>
+                        <span style={{ color: '#f59e0b', fontWeight: 600 }}>1st:</span> {contest.prizes[0]}
+                        {contest.prizes[1] ? <> · <span>2nd: {contest.prizes[1]}</span></> : null}
+                    </span>
                 </div>
             )}
 
@@ -128,7 +155,7 @@ function UpcomingCard({ contest, featured }) {
 }
 
 // ─── Past Contest Row ─────────────────────────────────────────────────────────
-function PastRow({ contest }) {
+function PastRow({ contest, userStats }) {
     const navigate = useNavigate()
     const [h, setH] = useState(false)
     return (
@@ -146,16 +173,16 @@ function PastRow({ contest }) {
             </div>
             <div style={{ textAlign: 'center', minWidth: '70px' }}>
                 <p style={{ fontSize: '12px', color: '#6b7280', marginBottom: '2px' }}>Problems</p>
-                <p style={{ fontSize: '15px', fontWeight: 600, color: '#d1d5db' }}>{contest.problemIds.length}</p>
+                <p style={{ fontSize: '15px', fontWeight: 600, color: '#d1d5db' }}>{contest.problemIds?.length || 0}</p>
             </div>
             <div style={{ textAlign: 'center', minWidth: '90px' }}>
                 <p style={{ fontSize: '12px', color: '#6b7280', marginBottom: '2px' }}>Participants</p>
-                <p style={{ fontSize: '15px', fontWeight: 600, color: '#d1d5db' }}>{contest.participants.toLocaleString()}</p>
+                <p style={{ fontSize: '15px', fontWeight: 600, color: '#d1d5db' }}>{(contest.participants || 0).toLocaleString()}</p>
             </div>
-            {contest.results?.userRank ? (
+            {userStats.rank ? (
                 <div style={{ textAlign: 'center', minWidth: '80px' }}>
                     <p style={{ fontSize: '12px', color: '#6b7280', marginBottom: '2px' }}>Your Rank</p>
-                    <p style={{ fontSize: '15px', fontWeight: 700, color: '#34d399' }}>#{contest.results.userRank}</p>
+                    <p style={{ fontSize: '15px', fontWeight: 700, color: '#34d399' }}>#{userStats.rank}</p>
                 </div>
             ) : (
                 <div style={{ minWidth: '80px', textAlign: 'center' }}>
@@ -183,7 +210,7 @@ function StatCard({ icon, label, value, gradient }) {
 // ─── Create Contest Modal ─────────────────────────────────────────────────────
 function CreateContestModal({ onClose, onCreate }) {
     const { addCustomProblem } = useContestStore()
-    const allProblems = mockProblems
+    const allProblems = useProblemStore((state) => state.problems)
     const [form, setForm] = useState({
         title: '', domain: 'DSA', type: 'custom', description: '', startTime: '',
         duration: 90, prizes: ['', '', ''], tags: '', visibility: 'public',
@@ -205,7 +232,7 @@ function CreateContestModal({ onClose, onCreate }) {
             .filter(p => p.domain === form.domain)
             .filter(p => p.title.toLowerCase().includes(searchQ.toLowerCase()))
             .slice(0, 20),
-        [searchQ, createdProblems, form.domain]
+        [allProblems, searchQ, createdProblems, form.domain]
     )
 
     const toggleProblem = (id) => {
@@ -268,10 +295,10 @@ function CreateContestModal({ onClose, onCreate }) {
         setStep2Tab('select')
     }
 
-    const handleSubmit = () => {
+    const handleSubmit = async () => {
         if (!validate2()) return
         const defaultStart = new Date(Date.now() + 86400000).toISOString()
-        onCreate({
+        const createdId = await onCreate({
             title: form.title, domain: form.domain, type: form.type, description: form.description,
             startTime: form.startTime ? new Date(form.startTime).toISOString() : defaultStart,
             duration: Number(form.duration),
@@ -280,7 +307,7 @@ function CreateContestModal({ onClose, onCreate }) {
             problemIds: form.selectedProblems,
             ranking: form.domain === 'ML' ? 'accuracy' : 'score',
         })
-        onClose()
+        if (createdId) onClose()
     }
 
     const inputStyle = { width: '100%', padding: '10px 14px', borderRadius: '10px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', color: '#e5e7eb', fontSize: '14px', outline: 'none', fontFamily: 'inherit', transition: 'border-color 0.2s', boxSizing: 'border-box' }
@@ -524,33 +551,111 @@ function CreateContestModal({ onClose, onCreate }) {
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function Contests() {
     const navigate = useNavigate()
+    const user = useAuthStore((state) => state.user)
+    const now = useNow()
     const [tab, setTab] = useState('upcoming')
     const [showCreate, setShowCreate] = useState(false)
     const [searchQ, setSearchQ] = useState('')
     const { contests, createContest, registered } = useContestStore()
 
+    const contestEntries = useMemo(() =>
+        contests.map((contest) => ({
+            contest,
+            phase: getContestPhase(contest, now),
+            userStats: getContestUserStats(contest, user?.username),
+        })),
+        [contests, now, user?.username]
+    )
+
     const upcomingContests = useMemo(() =>
-        contests.filter(c => c.status === 'upcoming' || c.status === 'active')
-            .filter(c => !searchQ || c.title.toLowerCase().includes(searchQ.toLowerCase()))
-            .sort((a, b) => new Date(a.startTime) - new Date(b.startTime)),
-        [contests, searchQ]
+        contestEntries
+            .filter(({ phase, contest }) => phase !== 'past' && (!searchQ || contest.title.toLowerCase().includes(searchQ.toLowerCase())))
+            .sort((a, b) => new Date(a.contest.startTime) - new Date(b.contest.startTime)),
+        [contestEntries, searchQ]
     )
 
     const pastContests = useMemo(() =>
-        contests.filter(c => c.status === 'past')
-            .filter(c => !searchQ || c.title.toLowerCase().includes(searchQ.toLowerCase()))
-            .sort((a, b) => new Date(b.startTime) - new Date(a.startTime)),
-        [contests, searchQ]
+        contestEntries
+            .filter(({ phase, contest }) => phase === 'past' && (!searchQ || contest.title.toLowerCase().includes(searchQ.toLowerCase())))
+            .sort((a, b) => new Date(b.contest.startTime) - new Date(a.contest.startTime)),
+        [contestEntries, searchQ]
     )
 
-    const featuredContests = upcomingContests.filter(c => c.featured)
-    const regularContests  = upcomingContests.filter(c => !c.featured)
+    const featuredContests = upcomingContests.filter(({ contest }) => contest.featured)
+    const regularContests  = upcomingContests.filter(({ contest }) => !contest.featured)
 
-    const myContests = useMemo(() => Object.keys(registered).filter(id => registered[id]).map(id => contests.find(c => c.id === id)).filter(Boolean), [registered, contests])
+    const registeredCount = useMemo(
+        () => Object.values(registered).filter(Boolean).length,
+        [registered]
+    )
 
-    const handleCreate = (data) => {
-        const id = createContest(data)
-        navigate(`/contests/${id}`)
+    const participatedContests = useMemo(() =>
+        pastContests.filter(({ userStats }) =>
+            userStats.rank || userStats.score !== null || userStats.accuracy !== null || userStats.solved !== null
+        ),
+        [pastContests]
+    )
+
+    const bestRank = useMemo(() => {
+        const ranks = participatedContests.map(({ userStats }) => userStats.rank).filter(Boolean)
+        return ranks.length > 0 ? Math.min(...ranks) : null
+    }, [participatedContests])
+
+    const totalSolved = useMemo(
+        () => participatedContests.reduce((total, { userStats }) => total + (userStats.solved || 0), 0),
+        [participatedContests]
+    )
+
+    const topScore = useMemo(
+        () => participatedContests.reduce((best, { userStats }) => Math.max(best, userStats.score || 0), 0),
+        [participatedContests]
+    )
+
+    const topAccuracy = useMemo(
+        () => participatedContests.reduce((best, { userStats }) => Math.max(best, userStats.accuracy || 0), 0),
+        [participatedContests]
+    )
+
+    const liveContests = useMemo(
+        () => contestEntries.filter(({ phase }) => phase === 'active'),
+        [contestEntries]
+    )
+
+    const openContestRegistrations = useMemo(
+        () => upcomingContests.reduce((total, { contest }) => total + (contest.participants || 0), 0),
+        [upcomingContests]
+    )
+
+    const representedCountries = useMemo(() => {
+        const countries = new Set()
+        contests.forEach((contest) => {
+            ;(contest.leaderboard || []).forEach((row) => {
+                if (row.country) countries.add(row.country)
+            })
+        })
+        return countries
+    }, [contests])
+
+    const aggregatePrizePool = useMemo(() => getAggregatePrizePool(contests), [contests])
+    const prizeUnit = useMemo(() => getPrizeUnit(contests), [contests])
+
+    const heroStats = useMemo(() => [
+        { label: 'Open Registrations', value: openContestRegistrations.toLocaleString() },
+        { label: 'Contests Held', value: pastContests.length.toLocaleString() },
+        { label: 'Prize Pool', value: aggregatePrizePool > 0 ? `${aggregatePrizePool.toLocaleString()}${prizeUnit ? ` ${prizeUnit}` : ''}` : 'TBD' },
+        { label: 'Countries Represented', value: representedCountries.size.toLocaleString() },
+    ], [aggregatePrizePool, openContestRegistrations, pastContests.length, prizeUnit, representedCountries.size])
+
+    const performanceStat = topScore > 0
+        ? { label: 'Top Score', value: topScore.toLocaleString(), icon: <Star size={18} style={{ color: '#60a5fa' }} />, gradient: 'rgba(96,165,250,0.15)' }
+        : topAccuracy > 0
+            ? { label: 'Top Accuracy', value: `${(topAccuracy * 100).toFixed(2)}%`, icon: <Star size={18} style={{ color: '#60a5fa' }} />, gradient: 'rgba(96,165,250,0.15)' }
+            : { label: 'Top Score', value: 'N/A', icon: <Star size={18} style={{ color: '#60a5fa' }} />, gradient: 'rgba(96,165,250,0.15)' }
+
+    const handleCreate = async (data) => {
+        const id = await createContest(data, user?.username)
+        if (id) navigate(`/contests/${id}`)
+        return id
     }
 
     return (
@@ -564,12 +669,14 @@ export default function Contests() {
                 <div style={{ position: 'absolute', top: '-100px', left: '50%', transform: 'translateX(-50%)', width: '600px', height: '600px', borderRadius: '50%', background: 'radial-gradient(circle,rgba(52,211,153,0.06) 0%,transparent 70%)', pointerEvents: 'none' }} />
                 <div style={{ position: 'relative', maxWidth: '760px', margin: '0 auto', padding: '0 32px' }}>
                     <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '6px 16px', borderRadius: '20px', background: 'rgba(52,211,153,0.08)', border: '1px solid rgba(52,211,153,0.2)', marginBottom: '18px' }}>
-                        <Zap size={13} style={{ color: '#34d399' }} /><span style={{ fontSize: '12px', fontWeight: 700, color: '#34d399', letterSpacing: '0.08em', textTransform: 'uppercase' }}>Live Competitions</span>
+                        <Zap size={13} style={{ color: '#34d399' }} /><span style={{ fontSize: '12px', fontWeight: 700, color: '#34d399', letterSpacing: '0.08em', textTransform: 'uppercase' }}>{liveContests.length > 0 ? `${liveContests.length} Live Now` : 'Contest Overview'}</span>
                     </div>
                     <h1 style={{ fontSize: '46px', fontWeight: 800, lineHeight: 1.1, background: 'linear-gradient(135deg,#f1f5f9 0%,#94a3b8 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', marginBottom: '14px', letterSpacing: '-0.02em' }}>Compete. Rank. Conquer.</h1>
-                    <p style={{ fontSize: '16px', color: '#94a3b8', lineHeight: 1.7, marginBottom: '28px' }}>Test your skills against thousands of developers worldwide.</p>
+                    <p style={{ fontSize: '16px', color: '#94a3b8', lineHeight: 1.7, marginBottom: '28px' }}>
+                        Track live contests, upcoming registrations, and your own performance from the contests currently in the system.
+                    </p>
                     <div style={{ display: 'flex', justifyContent: 'center', gap: '24px', flexWrap: 'wrap', padding: '18px 28px', background: 'rgba(255,255,255,0.02)', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.06)' }}>
-                        {[{ label: 'Active Participants', value: '42,000+' }, { label: 'Contests Held', value: `${contests.length + 374}` }, { label: 'Prize Pool', value: '$12,000+' }, { label: 'Countries', value: '55+' }].map(({ label, value }) => (
+                        {heroStats.map(({ label, value }) => (
                             <div key={label} style={{ textAlign: 'center' }}>
                                 <p style={{ fontSize: '20px', fontWeight: 700, color: '#34d399', marginBottom: '2px' }}>{value}</p>
                                 <p style={{ fontSize: '12px', color: '#6b7280', fontWeight: 500 }}>{label}</p>
@@ -586,11 +693,11 @@ export default function Contests() {
                 <div style={{ marginBottom: '32px' }}>
                     <h2 style={{ fontSize: '17px', fontWeight: 700, color: '#e5e7eb', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}><TrendingUp size={17} style={{ color: '#34d399' }} /> My Contest Stats</h2>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(170px,1fr))', gap: '12px' }}>
-                        <StatCard icon={<Trophy size={18} style={{ color: '#fbbf24' }} />} label="Contests Attended" value={myContests.filter(c => c.status === 'past').length || 3} gradient="rgba(245,158,11,0.15)" />
-                        <StatCard icon={<Award size={18} style={{ color: '#34d399' }} />} label="Best Rank" value="#88" gradient="rgba(52,211,153,0.15)" />
-                        <StatCard icon={<Star size={18} style={{ color: '#60a5fa' }} />} label="Contest Rating" value="1,847" gradient="rgba(96,165,250,0.15)" />
-                        <StatCard icon={<Flame size={18} style={{ color: '#f87171' }} />} label="Problems Solved" value="34" gradient="rgba(248,113,113,0.15)" />
-                        <StatCard icon={<BarChart2 size={18} style={{ color: '#c084fc' }} />} label="Registered" value={Object.values(registered).filter(Boolean).length} gradient="rgba(192,132,252,0.15)" />
+                        <StatCard icon={<Trophy size={18} style={{ color: '#fbbf24' }} />} label="Contests Attended" value={participatedContests.length.toLocaleString()} gradient="rgba(245,158,11,0.15)" />
+                        <StatCard icon={<Award size={18} style={{ color: '#34d399' }} />} label="Best Rank" value={bestRank ? `#${bestRank}` : 'N/A'} gradient="rgba(52,211,153,0.15)" />
+                        <StatCard icon={performanceStat.icon} label={performanceStat.label} value={performanceStat.value} gradient={performanceStat.gradient} />
+                        <StatCard icon={<Flame size={18} style={{ color: '#f87171' }} />} label="Problems Solved" value={totalSolved.toLocaleString()} gradient="rgba(248,113,113,0.15)" />
+                        <StatCard icon={<BarChart2 size={18} style={{ color: '#c084fc' }} />} label="Registered" value={registeredCount.toLocaleString()} gradient="rgba(192,132,252,0.15)" />
                     </div>
                 </div>
 
@@ -621,7 +728,7 @@ export default function Contests() {
                             <div style={{ marginBottom: '28px' }}>
                                 <p style={{ fontSize: '11px', fontWeight: 700, color: '#6b7280', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '6px' }}><Flame size={11} style={{ color: '#f59e0b' }} /> Featured</p>
                                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(340px,1fr))', gap: '20px' }}>
-                                    {featuredContests.map(c => <UpcomingCard key={c.id} contest={c} featured />)}
+                                    {featuredContests.map(({ contest }) => <UpcomingCard key={contest.id} contest={contest} featured />)}
                                 </div>
                             </div>
                         )}
@@ -629,7 +736,7 @@ export default function Contests() {
                             <div>
                                 <p style={{ fontSize: '11px', fontWeight: 700, color: '#6b7280', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: '14px' }}>All Upcoming</p>
                                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(320px,1fr))', gap: '16px' }}>
-                                    {regularContests.map(c => <UpcomingCard key={c.id} contest={c} featured={false} />)}
+                                    {regularContests.map(({ contest }) => <UpcomingCard key={contest.id} contest={contest} featured={false} />)}
                                 </div>
                             </div>
                         )}
@@ -647,7 +754,7 @@ export default function Contests() {
                 {/* ── Past ── */}
                 {tab === 'past' && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                        {pastContests.map(c => <PastRow key={c.id} contest={c} />)}
+                        {pastContests.map(({ contest, userStats }) => <PastRow key={contest.id} contest={contest} userStats={userStats} />)}
                         {pastContests.length === 0 && (
                             <div style={{ textAlign: 'center', padding: '60px 0', color: '#6b7280' }}>
                                 <CheckCircle size={40} style={{ marginBottom: '12px', opacity: 0.3 }} />

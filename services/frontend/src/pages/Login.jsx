@@ -101,30 +101,42 @@ export default function Login() {
         email: '', password: '',
     })
     const [showPw, setShowPw] = useState(false)
-    const { mockLogin } = useAuthStore()
+    const loginWithCredentials = useAuthStore((state) => state.loginWithCredentials)
+    const socialLogin = useAuthStore((state) => state.socialLogin)
     const navigate = useNavigate()
 
     const update = (field) => (e) => setForm({ ...form, [field]: e.target.value })
 
-    const handleSubmit = (e) => {
+    const handleSubmit = async (e) => {
         e.preventDefault()
         if (!form.email || !form.password) {
             return toast.error('Please fill in all fields')
         }
-        mockLogin({ email: form.email })
-        toast.success('Signed in successfully!')
-        navigate('/problems')
+
+        try {
+            await loginWithCredentials({ email: form.email, password: form.password })
+            toast.success('Signed in successfully!')
+            navigate('/problems')
+        } catch (error) {
+            toast.error(error.response?.data?.detail || 'Unable to sign in')
+        }
     }
 
-    const handleGoogle = () => {
+    const handleGoogle = async () => {
         const fallbackKey = `google_${Date.now()}`
-        mockLogin({
-            username: form.email ? form.email.split('@')[0] : fallbackKey,
-            email: form.email || `${fallbackKey}@coderunner.dev`,
-            displayName: 'Google User',
-        })
-        toast.success('Signed in with Google')
-        navigate('/problems')
+
+        try {
+            await socialLogin({
+                username: form.email ? form.email.split('@')[0] : fallbackKey,
+                email: form.email || `${fallbackKey}@coderunner.dev`,
+                displayName: 'Google User',
+                provider: 'google',
+            })
+            toast.success('Signed in with Google')
+            navigate('/problems')
+        } catch (error) {
+            toast.error(error.response?.data?.detail || 'Google sign-in failed')
+        }
     }
 
     const fields = [

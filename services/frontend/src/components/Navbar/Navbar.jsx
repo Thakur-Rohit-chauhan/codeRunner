@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
-import { Shield, User, LogOut, Settings, Palette, ChevronDown, BookOpen, BarChart3, Layout, X, Download, Check, Trophy } from 'lucide-react'
+import { Shield, User, LogOut, Settings, Palette, ChevronDown, BookOpen, BarChart3, Layout, Trophy } from 'lucide-react'
 import useAuthStore from '../../store/authStore'
 
 export default function Navbar() {
@@ -11,19 +11,7 @@ export default function Navbar() {
     const location = useLocation()
 
     // --- New States for drop-down features ---
-    const [isNotesOpen, setIsNotesOpen] = useState(false)
-    const [notesText, setNotesText] = useState(() => localStorage.getItem('user_notes') || '')
-    const [notesTitle, setNotesTitle] = useState(() => localStorage.getItem('user_notes_title') || 'Personal Notes')
     const [theme, setTheme] = useState(() => localStorage.getItem('app_theme') || 'dark')
-    const [showSavedToast, setShowSavedToast] = useState(false)
-
-    useEffect(() => {
-        localStorage.setItem('user_notes', notesText)
-    }, [notesText])
-
-    useEffect(() => {
-        localStorage.setItem('user_notes_title', notesTitle)
-    }, [notesTitle])
 
     useEffect(() => {
         localStorage.setItem('app_theme', theme)
@@ -33,23 +21,6 @@ export default function Navbar() {
             document.body.classList.remove('light-theme')
         }
     }, [theme])
-
-    const handleSaveNoteToFile = () => {
-        const blob = new Blob([notesText], { type: 'text/plain' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `${notesTitle.trim() || 'note'}.txt`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-    };
-
-    const handleManualSave = () => {
-        setShowSavedToast(true);
-        setTimeout(() => setShowSavedToast(false), 2000);
-    };
 
     useEffect(() => {
         function handleClickOutside(e) {
@@ -353,10 +324,10 @@ export default function Navbar() {
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '6px', marginBottom: '8px', padding: '0 2px' }}>
                                     {[
                                         { Icon: BookOpen, label: 'Lists', onClick: () => { navigate('/list/bookmarks'); setDropdown(false); } },
-                                        { Icon: Layout, label: 'Notes', onClick: () => { setIsNotesOpen(true); setDropdown(false); } },
+                                        { Icon: Layout, label: 'Notes', onClick: () => { navigate('/notes'); setDropdown(false); } },
                                         { Icon: BarChart3, label: 'Stats', onClick: () => { navigate(`/profile/${user?.username}`); setDropdown(false); } },
-                                    ].map(({ Icon, label, onClick }) => (
-                                        <button key={label} onClick={onClick}
+                                    ].map((item) => (
+                                        <button key={item.label} onClick={item.onClick}
                                             style={{
                                                 display: 'flex',
                                                 flexDirection: 'column',
@@ -379,8 +350,8 @@ export default function Navbar() {
                                                 e.currentTarget.style.borderColor = 'rgba(255,255,255,0.05)'
                                             }}
                                         >
-                                            <Icon style={{ width: '18px', height: '18px', color: '#6b7280' }} />
-                                            <span style={{ fontSize: '9.5px', fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.07em' }}>{label}</span>
+                                            <item.Icon style={{ width: '18px', height: '18px', color: '#6b7280' }} />
+                                            <span style={{ fontSize: '9.5px', fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.07em' }}>{item.label}</span>
                                         </button>
                                     ))}
                                 </div>
@@ -394,8 +365,8 @@ export default function Navbar() {
                                         { Icon: User, label: 'View Profile', onClick: () => { setDropdown(false); navigate(`/profile/${user?.username}`) } },
                                         { Icon: Settings, label: 'Settings', onClick: () => { setDropdown(false); navigate('/settings') } },
                                         { Icon: Palette, label: 'Appearance', onClick: () => { setTheme(theme === 'dark' ? 'light' : 'dark'); setDropdown(false); } },
-                                    ].map(({ Icon, label, onClick }) => (
-                                        <button key={label} onClick={onClick}
+                                    ].map((item) => (
+                                        <button key={item.label} onClick={item.onClick}
                                             style={{
                                                 display: 'flex',
                                                 alignItems: 'center',
@@ -416,8 +387,8 @@ export default function Navbar() {
                                             onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; e.currentTarget.style.color = '#fff' }}
                                             onMouseLeave={e => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = 'rgba(209,213,219,0.9)' }}
                                         >
-                                            <Icon style={{ width: '18px', height: '18px', color: '#9ca3af', flexShrink: 0 }} />
-                                            {label}
+                                            <item.Icon style={{ width: '18px', height: '18px', color: '#9ca3af', flexShrink: 0 }} />
+                                            {item.label}
                                         </button>
                                     ))}
 
@@ -493,62 +464,6 @@ export default function Navbar() {
                     </div>
                 </div>
             </div>
-
-            {/* ═ Notes Editor Modal ═ */}
-            {isNotesOpen && (
-                <div style={{ position: 'fixed', inset: 0, zIndex: 100000, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }}>
-                    <div style={{ width: '500px', backgroundColor: '#161a20', borderRadius: '16px', padding: '20px', border: '1px solid rgba(255,255,255,0.08)', boxShadow: '0 20px 50px rgba(0,0,0,0.5)', display: 'flex', flexDirection: 'column' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1 }}>
-                                <Layout size={20} className="text-green-400" />
-                                <input
-                                    type="text"
-                                    value={notesTitle}
-                                    onChange={(e) => setNotesTitle(e.target.value)}
-                                    placeholder="Note Title..."
-                                    style={{
-                                        background: 'transparent', border: 'none', color: '#fff', fontSize: '18px', fontWeight: 600, outline: 'none', width: '100%',
-                                        borderBottom: '1px solid transparent', transition: 'border-color 0.2s'
-                                    }}
-                                    onFocus={e => e.currentTarget.style.borderBottomColor = 'rgba(52,211,153,0.5)'}
-                                    onBlur={e => e.currentTarget.style.borderBottomColor = 'transparent'}
-                                />
-                            </div>
-                            <button onClick={() => setIsNotesOpen(false)} style={{ color: '#9ca3af', padding: '4px', borderRadius: '8px' }} onMouseEnter={e => e.currentTarget.style.backgroundColor='rgba(255,255,255,0.1)'} onMouseLeave={e => e.currentTarget.style.backgroundColor='transparent'}>
-                                <X size={20} />
-                            </button>
-                        </div>
-                        <textarea
-                            value={notesText}
-                            onChange={(e) => setNotesText(e.target.value)}
-                            placeholder="Jot down formulas, algorithmic thoughts, or reference links here... They are saved automatically to your device."
-                            style={{ width: '100%', height: '320px', backgroundColor: '#0d1117', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', padding: '16px', color: '#e5e7eb', fontSize: '14px', lineHeight: '1.6', resize: 'none', outline: 'none', fontFamily: 'monospace' }}
-                        />
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <button
-                                    onClick={handleManualSave}
-                                    style={{ display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: 'rgba(52,211,153,0.1)', color: '#34d399', border: '1px solid rgba(52,211,153,0.3)', padding: '8px 16px', borderRadius: '8px', fontSize: '13px', fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s' }}
-                                    onMouseEnter={e => e.currentTarget.style.backgroundColor='rgba(52,211,153,0.2)'}
-                                    onMouseLeave={e => e.currentTarget.style.backgroundColor='rgba(52,211,153,0.1)'}
-                                >
-                                    {showSavedToast ? <Check size={16} /> : <Check size={16} opacity={0.6} />}
-                                    {showSavedToast ? 'Saved!' : 'Save'}
-                                </button>
-                                {showSavedToast && <span className="text-xs text-green-400/80 animate-fade-in">Saved to browser storage</span>}
-                            </div>
-                            <button
-                                onClick={handleSaveNoteToFile}
-                                style={{ display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: '#fff', color: '#000', border: 'none', padding: '8px 16px', borderRadius: '8px', fontSize: '13px', fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s' }}
-                                onMouseEnter={e => e.currentTarget.style.backgroundColor='#e5e5e5'}
-                                onMouseLeave={e => e.currentTarget.style.backgroundColor='#fff'}
-                            >
-                                <Download size={16} /> Export File
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
 
         </nav>
     )
