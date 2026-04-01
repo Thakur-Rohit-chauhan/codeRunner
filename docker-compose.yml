@@ -6,15 +6,14 @@
 # Phase 3: gRPC on Problem Service
 # Phase 4: Judge-Standard Consumer Worker
 # Phase 5: Redis + Contest Service (Leaderboards)
-#
-# CRITICAL: Append only — never remove services from
-# previous phases. Future phases add new services below.
+# Frontend-by-AR additions: auth-service support and
+# host port mappings aligned with the current frontend.
 # ===================================================
 
 services:
 
   # ---------------------------------------------------
-  # Phase 1: PostgreSQL Database
+  # Shared PostgreSQL Database
   # ---------------------------------------------------
   postgres:
     image: postgres:16-alpine
@@ -32,7 +31,7 @@ services:
     ports:
       - "5432:5432"
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-problem_user}" ]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-problem_user}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -40,7 +39,45 @@ services:
       - platform-network
 
   # ---------------------------------------------------
-  # Phase 1+3: Problem Service (FastAPI + asyncpg + gRPC)
+  # Auth Service Database
+  # ---------------------------------------------------
+  auth-db:
+    image: postgres:15
+    container_name: platform-auth-db
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: authdb
+    volumes:
+      - auth_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - platform-network
+
+  # ---------------------------------------------------
+  # Auth Service
+  # ---------------------------------------------------
+  auth-service:
+    build:
+      context: ./services/auth-service
+    container_name: platform-auth-service
+    environment:
+      DATABASE_URL: ${AUTH_DATABASE_URL:-postgresql://user:password@auth-db:5432/authdb}
+    ports:
+      - "8000:8000"
+    depends_on:
+      auth-db:
+        condition: service_healthy
+    networks:
+      - platform-network
+    restart: unless-stopped
+
+  # ---------------------------------------------------
+  # Problem Service (FastAPI + gRPC)
   # ---------------------------------------------------
   problem-service:
     build:
@@ -54,6 +91,7 @@ services:
       SERVICE_NAME: problem-service
       SERVICE_PORT: "8001"
       GRPC_PORT: "${GRPC_PORT:-50051}"
+      SUBMISSION_SERVICE_URL: http://submission-service:8002
     ports:
       - "8001:8001"
       - "50051:50051"
@@ -61,7 +99,7 @@ services:
       postgres:
         condition: service_healthy
     healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:8001/health" ]
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -71,7 +109,7 @@ services:
     restart: unless-stopped
 
   # ---------------------------------------------------
-  # Phase 1: NGINX API Gateway (simple routing)
+  # NGINX API Gateway
   # ---------------------------------------------------
   nginx:
     image: nginx:alpine
@@ -81,6 +119,7 @@ services:
     ports:
       - "80:80"
     depends_on:
+      - auth-service
       - problem-service
       - submission-service
       - contest-service
@@ -89,7 +128,7 @@ services:
     restart: unless-stopped
 
   # ---------------------------------------------------
-  # Phase 2: RabbitMQ Message Broker
+  # RabbitMQ Message Broker
   # ---------------------------------------------------
   rabbitmq:
     image: rabbitmq:3.13-management-alpine
@@ -104,7 +143,7 @@ services:
       - "5672:5672"
       - "15672:15672"
     healthcheck:
-      test: [ "CMD", "rabbitmq-diagnostics", "ping" ]
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -113,7 +152,7 @@ services:
     restart: unless-stopped
 
   # ---------------------------------------------------
-  # Phase 2: Submission Service (FastAPI + RabbitMQ)
+  # Submission Service
   # ---------------------------------------------------
   submission-service:
     build:
@@ -129,16 +168,16 @@ services:
       SERVICE_PORT: "8002"
       PROBLEM_SERVICE_URL: http://problem-service:8001
     ports:
-      - "8002:8002"
+      - "8003:8002"
     depends_on:
       postgres:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
       problem-service:
-        condition: service_healthy
+        condition: service_started
     healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:8002/health" ]
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -148,7 +187,7 @@ services:
     restart: unless-stopped
 
   # ---------------------------------------------------
-  # Phase 4: Judge-Standard Consumer Worker
+  # Judge-Standard Consumer Worker
   # ---------------------------------------------------
   judge-standard:
     build:
@@ -172,11 +211,9 @@ services:
     networks:
       - platform-network
     restart: unless-stopped
-    # No ports — headless background worker
-    # No healthcheck — not an HTTP service
 
   # ---------------------------------------------------
-  # Phase 5: Redis (Real-Time Leaderboards)
+  # Redis (Real-Time Leaderboards)
   # ---------------------------------------------------
   redis:
     image: redis:7-alpine
@@ -195,7 +232,7 @@ services:
     restart: unless-stopped
 
   # ---------------------------------------------------
-  # Phase 5: Contest Service (FastAPI + Redis)
+  # Contest Service
   # ---------------------------------------------------
   contest-service:
     build:
@@ -211,7 +248,7 @@ services:
       SERVICE_NAME: contest-service
       SERVICE_PORT: "8003"
     ports:
-      - "8003:8003"
+      - "8002:8003"
     depends_on:
       postgres:
         condition: service_healthy
@@ -230,7 +267,7 @@ services:
     restart: unless-stopped
 
   # ---------------------------------------------------
-  # Phase 6: Judge-ML Consumer Worker
+  # Judge-ML Consumer Worker
   # ---------------------------------------------------
   judge-ml:
     build:
@@ -254,23 +291,17 @@ services:
     networks:
       - platform-network
     restart: unless-stopped
-    # No ports - headless background worker
-    # No healthcheck - not an HTTP service
 
-# ---------------------------------------------------
-# Volumes
-# ---------------------------------------------------
 volumes:
   postgres_data:
+    driver: local
+  auth_db_data:
     driver: local
   rabbitmq_data:
     driver: local
   redis_data:
     driver: local
 
-# ---------------------------------------------------
-# Networks
-# ---------------------------------------------------
 networks:
   platform-network:
     driver: bridge

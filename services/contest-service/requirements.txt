@@ -1,6 +1,6 @@
 # ===========================
 # Contest Service Dependencies
-# Phase 5 — Universal Contest Platform
+# Phase 5 - Universal Contest Platform
 # ===========================
 
 # Web Framework
@@ -17,10 +17,10 @@ pydantic==2.5.3
 pydantic-settings==2.1.0
 python-dotenv==1.0.0
 
-# Redis — real-time leaderboards
+# Redis - real-time leaderboards
 redis==5.0.1
 
-# RabbitMQ — consume score updates from judge-standard
+# RabbitMQ - consume score updates from judge-standard
 aio-pika==9.4.0
 
 # Logging
