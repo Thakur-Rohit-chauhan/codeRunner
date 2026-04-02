@@ -42,6 +42,39 @@ class Settings(BaseSettings):
     # Worker
     PREFETCH_COUNT: int = Field(default=1)  # Process one message at a time
 
+    # Docker execution sandbox
+    DOCKER_BINARY: str = Field(default="docker")
+    DOCKER_WORKDIR: str = Field(default="/workspace")
+    DOCKER_RUN_AS_UID: int = Field(default=1000, ge=1)
+    DOCKER_RUN_AS_GID: int = Field(default=1000, ge=1)
+    DOCKER_SECCOMP_PROFILE: str = Field(default="")
+
+    # Runtime images
+    PYTHON_IMAGE: str = Field(default="python:3.12-slim")
+    CPP_IMAGE: str = Field(default="gcc:14")
+    JAVA_IMAGE: str = Field(default="eclipse-temurin:21-jdk")
+    JAVASCRIPT_IMAGE: str = Field(default="node:20-slim")
+
+    # Resource limits
+    EXECUTION_CPU_COUNT: float = Field(default=1.0, ge=0.1, le=4.0)
+    EXECUTION_MEMORY_MARGIN_MB: int = Field(default=64, ge=0, le=2048)
+    EXECUTION_PIDS_LIMIT: int = Field(default=64, ge=16, le=512)
+    EXECUTION_NOFILE_LIMIT: int = Field(default=128, ge=64, le=4096)
+    EXECUTION_NPROC_LIMIT: int = Field(default=64, ge=16, le=512)
+    EXECUTION_MAX_FILE_KB: int = Field(default=10240, ge=128, le=102400)
+    EXECUTION_TMPFS_MB: int = Field(default=64, ge=16, le=1024)
+
+    # Timeouts
+    EXECUTION_TIMEOUT_GRACE_MS: int = Field(default=250, ge=0, le=5000)
+    COMPILATION_TIMEOUT_MS: int = Field(default=10000, ge=500, le=120000)
+
+    # Output comparison
+    COMPARE_IGNORE_TRAILING_WHITESPACE: bool = Field(default=True)
+    COMPARE_NORMALIZE_WHITESPACE: bool = Field(default=False)
+    COMPARE_CASE_SENSITIVE: bool = Field(default=True)
+    COMPARE_FLOAT_REL_TOL: float = Field(default=1e-6, ge=0.0, le=1.0)
+    COMPARE_FLOAT_ABS_TOL: float = Field(default=1e-9, ge=0.0, le=1.0)
+
     model_config = {
         "env_file": ".env",
         "env_file_encoding": "utf-8",
