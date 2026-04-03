@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: contest-platform
+  labels:
+    name: contest-platform
+    environment: production
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: contest-platform-staging
+  labels:
+    name: contest-platform-staging
+    environment: staging
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: contest-platform-monitoring
+  labels:
+    name: contest-platform-monitoring
+    purpose: monitoring

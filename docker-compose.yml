@@ -1,0 +1,291 @@
+x-platform-env: &platform-env
+  DATABASE_URL: postgresql+asyncpg://platform:platform@postgres:5432/platform
+  REDIS_URL: redis://redis:6379/0
+  SECRET_KEY: integrated-platform-secret
+  GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+  AUTO_CREATE_SCHEMA: "false"
+  SEED_DATA_ON_BOOT: "true"
+  QUEUE_RETRY_LIMIT: "3"
+  QUEUE_RETRY_BASE_DELAY_SECONDS: "2"
+  QUEUE_RETRY_MAX_DELAY_SECONDS: "30"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: integrated-postgres
+    environment:
+      POSTGRES_DB: platform
+      POSTGRES_USER: platform
+      POSTGRES_PASSWORD: platform
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U platform -d platform"]
+      interval: 10s
+      timeout: 5s
+      retries: 8
+      start_period: 10s
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: integrated-redis
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 8
+      start_period: 5s
+    restart: unless-stopped
+
+  migrations:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/integration.Dockerfile
+    container_name: integrated-migrations
+    environment:
+      <<: *platform-env
+    command:
+      - alembic
+      - upgrade
+      - head
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: "no"
+
+  auth-service:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/integration.Dockerfile
+    container_name: integrated-auth-service
+    environment:
+      <<: *platform-env
+      CORS_ORIGINS: http://localhost:3000,http://127.0.0.1:3000
+    command: ["uvicorn", "platform_services.auth_service:app", "--host", "0.0.0.0", "--port", "8001"]
+    ports:
+      - "8001:8001"
+    depends_on:
+      migrations:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8001/api/ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 20s
+    restart: unless-stopped
+
+  problem-service:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/integration.Dockerfile
+    container_name: integrated-problem-service
+    environment:
+      <<: *platform-env
+      CORS_ORIGINS: http://localhost:3000,http://127.0.0.1:3000
+    command: ["uvicorn", "platform_services.problem_service:app", "--host", "0.0.0.0", "--port", "8002"]
+    ports:
+      - "8002:8002"
+    depends_on:
+      migrations:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8002/api/ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 20s
+    restart: unless-stopped
+
+  submission-service:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/integration.Dockerfile
+    container_name: integrated-submission-service
+    environment:
+      <<: *platform-env
+      CORS_ORIGINS: http://localhost:3000,http://127.0.0.1:3000
+    command: ["uvicorn", "platform_services.submission_service:app", "--host", "0.0.0.0", "--port", "8003"]
+    ports:
+      - "8003:8003"
+    depends_on:
+      migrations:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8003/api/ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 20s
+    restart: unless-stopped
+
+  contest-service:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/integration.Dockerfile
+    container_name: integrated-contest-service
+    environment:
+      <<: *platform-env
+      CORS_ORIGINS: http://localhost:3000,http://127.0.0.1:3000
+    command: ["uvicorn", "platform_services.contest_service:app", "--host", "0.0.0.0", "--port", "8004"]
+    ports:
+      - "8004:8004"
+    depends_on:
+      migrations:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8004/api/ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 20s
+    restart: unless-stopped
+
+  backend:
+    image: nginx:1.27-alpine
+    container_name: integrated-api-gateway
+    volumes:
+      - ./infrastructure/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "8000:80"
+    depends_on:
+      auth-service:
+        condition: service_healthy
+      problem-service:
+        condition: service_healthy
+      submission-service:
+        condition: service_healthy
+      contest-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 10s
+    restart: unless-stopped
+
+  judge-worker:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/integration.Dockerfile
+    container_name: integrated-judge-worker
+    environment:
+      <<: *platform-env
+    command: ["python", "worker_manager.py", "code", "--host", "0.0.0.0", "--port", "8101"]
+    ports:
+      - "8101:8101"
+    depends_on:
+      migrations:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      submission-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8101/ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 15s
+    restart: unless-stopped
+
+  ml-worker:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/integration.Dockerfile
+    container_name: integrated-ml-worker
+    environment:
+      <<: *platform-env
+    command: ["python", "worker_manager.py", "ml", "--host", "0.0.0.0", "--port", "8102"]
+    ports:
+      - "8102:8102"
+    depends_on:
+      migrations:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      submission-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8102/ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 15s
+    restart: unless-stopped
+
+  packet-worker:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/integration.Dockerfile
+    container_name: integrated-packet-worker
+    environment:
+      <<: *platform-env
+    command: ["python", "worker_manager.py", "packet", "--host", "0.0.0.0", "--port", "8103"]
+    ports:
+      - "8103:8103"
+    depends_on:
+      migrations:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      submission-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8103/ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 15s
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./services/frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_FORCE_LIVE_CONTESTS: "true"
+    container_name: integrated-frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
