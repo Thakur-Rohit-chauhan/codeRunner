@@ -102,7 +102,7 @@ export default function Login() {
     })
     const [showPw, setShowPw] = useState(false)
     const loginWithCredentials = useAuthStore((state) => state.loginWithCredentials)
-    const socialLogin = useAuthStore((state) => state.socialLogin)
+    const beginOAuthLogin = useAuthStore((state) => state.beginOAuthLogin)
     const navigate = useNavigate()
 
     const update = (field) => (e) => setForm({ ...form, [field]: e.target.value })
@@ -123,17 +123,8 @@ export default function Login() {
     }
 
     const handleGoogle = async () => {
-        const fallbackKey = `google_${Date.now()}`
-
         try {
-            await socialLogin({
-                username: form.email ? form.email.split('@')[0] : fallbackKey,
-                email: form.email || `${fallbackKey}@coderunner.dev`,
-                displayName: 'Google User',
-                provider: 'google',
-            })
-            toast.success('Signed in with Google')
-            navigate('/problems')
+            await beginOAuthLogin('google')
         } catch (error) {
             toast.error(error.response?.data?.detail || 'Google sign-in failed')
         }

@@ -698,6 +698,30 @@ const useAuthStore = create((set, get) => ({
         }
     },
 
+    beginOAuthLogin: async (provider = 'google') => {
+        const response = await api.get(`/auth/oauth/${provider}/authorize`)
+        let authorizationUrl = response.data?.authorization_url
+        if (!authorizationUrl) {
+            throw new Error('OAuth authorization URL is missing')
+        }
+
+        if (provider === 'google' && !/[?&]prompt=/.test(authorizationUrl)) {
+            authorizationUrl = `${authorizationUrl}${authorizationUrl.includes('?') ? '&' : '?'}prompt=select_account`
+        }
+
+        window.location.assign(authorizationUrl)
+    },
+
+    completeOAuthLogin: async (provider = 'google', search = '') => {
+        const query = search
+            ? (search.startsWith('?') ? search : `?${search}`)
+            : ''
+        const response = await api.get(`/auth/oauth/${provider}/callback${query}`)
+        applySession(set, response.data || {})
+        persistLocalAccount({ user: response.data?.user })
+        return response.data?.user || null
+    },
+
     socialLogin: async ({ username, email, displayName, provider = 'google' }) => {
         try {
             const response = await api.post('/auth/social-login', {

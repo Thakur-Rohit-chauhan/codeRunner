@@ -6,6 +6,7 @@ import useProblemStore from './store/problemStore'
 import Landing from './pages/Landing'
 import Login from './pages/Login'
 import Register from './pages/Register'
+import OAuthCallback from './pages/OAuthCallback'
 import Problems from './pages/Problems'
 import ProblemSolver from './pages/ProblemSolver'
 import Profile from './pages/Profile'
@@ -67,6 +68,7 @@ export default function App() {
       <Route path="/" element={<Landing />} />
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
+      <Route path="/oauth/callback/:provider" element={<OAuthCallback />} />
       <Route path="/problems" element={<ProtectedRoute><Problems /></ProtectedRoute>} />
       <Route path="/problems/:id" element={<ProtectedRoute><ProblemSolver /></ProtectedRoute>} />
       <Route path="/profile/:username/connections" element={<ProtectedRoute><Connections /></ProtectedRoute>} />
