@@ -8,6 +8,7 @@ import useContestStore from '../store/contestStore'
 import useSocialStore, { computeFollowStats } from '../store/socialStore'
 import useProblemStore from '../store/problemStore'
 import { buildCaseSummary, countSubmissionStatuses, getSubmissionStatusMeta } from '../utils/submissionStatus'
+import api from '../services/api'
 
 /* ── shared glassmorphism card style ── */
 const glassCard = {
@@ -468,10 +469,12 @@ export default function Profile() {
     const [activeTab, setActiveTab] = useState('recent')
     const [isSubmissionPanelOpen, setIsSubmissionPanelOpen] = useState(false)
     const [profileData, setProfileData] = useState(viewerUser)
+    const [backendProfile, setBackendProfile] = useState(null)
+    const [profileLoading, setProfileLoading] = useState(false)
 
     const profileUsername = username || viewerUser?.username || ''
     const isOwnProfile = profileUsername === viewerUser?.username
-    const profileUser = isOwnProfile ? viewerUser : (userDirectory?.[profileUsername] || null)
+    const profileUser = backendProfile || (isOwnProfile ? viewerUser : (userDirectory?.[profileUsername] || null))
     const profileProblems = useMemo(
         () => (isOwnProfile ? problems : (problemsByUsername?.[profileUsername] || [])),
         [isOwnProfile, problems, problemsByUsername, profileUsername]
@@ -496,6 +499,33 @@ export default function Profile() {
     }
     const resolvedProfileProblems = useMemo(() => profileProblems || [], [profileProblems])
     const resolvedUserSubmissions = useMemo(() => userSubmissions || [], [userSubmissions])
+
+    useEffect(() => {
+        let cancelled = false
+
+        if (!profileUsername) {
+            setBackendProfile(null)
+            return () => { cancelled = true }
+        }
+
+        setProfileLoading(true)
+        api.get(`/users/${encodeURIComponent(profileUsername)}/profile`)
+            .then((response) => {
+                if (cancelled) return
+                setBackendProfile(response.data?.user || null)
+            })
+            .catch(() => {
+                if (cancelled) return
+                setBackendProfile(null)
+            })
+            .finally(() => {
+                if (!cancelled) setProfileLoading(false)
+            })
+
+        return () => {
+            cancelled = true
+        }
+    }, [profileUsername])
 
     useEffect(() => {
         if (!profileUser) return
@@ -845,6 +875,19 @@ export default function Profile() {
     const totalRows = currentTabContent.rows.length
     const actionLabel = `View all ${totalRows} ${currentTabContent.noun}${totalRows === 1 ? '' : 's'} →`
 
+    if (profileLoading && !profileUser) {
+        return (
+            <div style={{ minHeight: '100vh', background: 'linear-gradient(135deg, #0b0f19 0%, #161b22 100%)', color: '#e5e7eb', fontFamily: '"Inter", "Roboto", sans-serif' }}>
+                <Navbar />
+                <div style={{ maxWidth: '920px', margin: '0 auto', padding: '48px 32px' }}>
+                    <div style={{ ...glassCard, padding: '28px', textAlign: 'center' }}>
+                        <p style={{ color: '#9ca3af', fontSize: '14px' }}>Loading profile...</p>
+                    </div>
+                </div>
+            </div>
+        )
+    }
+
     if (!profileUser || !profileData || !viewerUser) {
         return (
             <div style={{ minHeight: '100vh', background: 'linear-gradient(135deg, #0b0f19 0%, #161b22 100%)', color: '#e5e7eb', fontFamily: '"Inter", "Roboto", sans-serif' }}>
@@ -1055,10 +1098,10 @@ export default function Profile() {
                             <h3 style={{ fontSize: '14px', fontWeight: 600, color: '#e5e7eb', marginBottom: '16px' }}>Community Stats</h3>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                                 {[
-                                    { icon: <Eye style={{ width: '15px', height: '15px' }} />, label: 'Views', value: profileUser.views, color: '#60a5fa' },
-                                    { icon: <CheckSquare style={{ width: '15px', height: '15px' }} />, label: 'Solution', value: profileUser.solutions, color: '#34d399' },
-                                    { icon: <MessageSquare style={{ width: '15px', height: '15px' }} />, label: 'Discuss', value: profileUser.discussions, color: '#a78bfa' },
-                                    { icon: <Star style={{ width: '15px', height: '15px' }} />, label: 'Reputation', value: profileUser.reputation, color: '#fbbf24' },
+                                    { icon: <Eye style={{ width: '15px', height: '15px' }} />, label: 'Views', value: Number(profileUser.views || 0), color: '#60a5fa' },
+                                    { icon: <CheckSquare style={{ width: '15px', height: '15px' }} />, label: 'Solution', value: Number(profileUser.solutions || 0), color: '#34d399' },
+                                    { icon: <MessageSquare style={{ width: '15px', height: '15px' }} />, label: 'Discuss', value: Number(profileUser.discussions || 0), color: '#a78bfa' },
+                                    { icon: <Star style={{ width: '15px', height: '15px' }} />, label: 'Reputation', value: Number(profileUser.reputation || 0), color: '#fbbf24' },
                                 ].map(({ icon, label, value, color }) => (
                                     <div key={label} style={{
                                         display: 'flex', alignItems: 'center', justifyContent: 'space-between',

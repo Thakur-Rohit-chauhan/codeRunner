@@ -1,12 +1,9 @@
-# Common Shared Library
+# Common
 
-This directory contains shared code, contracts, and schemas used across all microservices in the Universal Contest Platform.
+This directory is reserved for shared contracts that may be reintroduced later, such as:
 
-## Structure
+- protobuf definitions
+- event payload schemas
+- cross-service DTOs
 
-- **protos/**: gRPC protocol buffer definitions for inter-service communication
-- **events/**: RabbitMQ message schemas and event definitions for asynchronous communication
-
-## Usage
-
-Services should import and use these shared definitions to ensure consistency across the platform.
+In the current integrated architecture, the active shared runtime lives in [integrated_platform](/d:/codeRunner-main/integrated_platform), so `common/` is only a placeholder and is not required by the running stack.

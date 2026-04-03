@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import api from '../services/api'
+import { submitIntegratedChallenge } from '../services/integratedJudge'
 import { buildStarterCodeMap } from '../utils/compilerLanguages'
 import {
     getSeedProblemDetail,
@@ -117,6 +118,38 @@ const shouldFallbackToLocalProblemMutation = (error) => {
     if (!error.response) return true
     return [404, 405, 500, 502, 503, 504].includes(error.response.status)
 }
+
+const buildIntegratedProblemState = (problem, judgeResult, statusPayload) => ({
+    ...(problem || {}),
+    id: problem?.id,
+    status: judgeResult?.allPassed ? 'solved' : 'attempted',
+    lastSubmitted: statusPayload?.completedAt || statusPayload?.createdAt || new Date().toISOString(),
+})
+
+const buildIntegratedSubmissionRecord = ({
+    problemId,
+    problem,
+    language,
+    judgeResult,
+    statusPayload,
+}) => ({
+    id: statusPayload?.submissionId || `integrated-${problemId}-${Date.now()}`,
+    problemId: problemId,
+    problemTitle: problem?.title || 'Untitled problem',
+    domain: problem?.domain || 'DSA',
+    status: judgeResult?.status || 'Runtime Error',
+    language: language || 'python',
+    runtime: judgeResult?.time || 'N/A',
+    memory: judgeResult?.memory || 'N/A',
+    stdout: judgeResult?.stdout || '',
+    expected: judgeResult?.expected || '',
+    stderr: judgeResult?.stderr || '',
+    allPassed: Boolean(judgeResult?.allPassed),
+    passedCases: judgeResult?.passedCases || 0,
+    totalCases: judgeResult?.totalCases || 0,
+    cases: Array.isArray(judgeResult?.cases) ? judgeResult.cases : [],
+    submittedAt: statusPayload?.completedAt || statusPayload?.createdAt || new Date().toISOString(),
+})
 
 const createLocalSubmissionFallback = (problem, payload, error) => {
     const submittedAt = new Date().toISOString()
@@ -675,12 +708,128 @@ const useProblemStore = create((set, get) => ({
     },
 
     runProblem: async (problemId, payload = {}) => {
+        const problem = get().problemDetailsById[String(problemId)] || getSeedProblemDetail(problemId)
+
+        if (problem?.domain) {
+            try {
+                const response = await api.post(`/problem/problems/${problemId}/run`, {
+                    language: payload.language || 'python',
+                    code: payload.code || payload.source_code || payload.notebook_payload || payload.packet_script || '',
+                    input: payload.input || '',
+                })
+                return response.data?.result || null
+            } catch (error) {
+                if (!shouldFallbackToLocalSubmission(error)) {
+                    throw error
+                }
+            }
+        }
+
         const response = await api.post(`/problem/problems/${problemId}/run`, payload)
         return response.data?.result || null
     },
 
     submitProblem: async (problemId, payload = {}) => {
         const username = payload.username
+        const problem = get().problemDetailsById[String(problemId)] || getSeedProblemDetail(problemId)
+
+        if (problem?.domain) {
+            try {
+                const integrated = await submitIntegratedChallenge({
+                    domain: problem.domain,
+                    submissionType: problem.submissionType,
+                    language: payload.language || 'python',
+                    sourceText: payload.code || payload.source_code || payload.notebook_payload || payload.packet_script || '',
+                    entrypoint: payload.entrypoint,
+                    topology: payload.topology,
+                    problemId,
+                })
+                const nextProblem = buildIntegratedProblemState(problem, integrated.judgeResult, integrated.statusPayload)
+                const submission = buildIntegratedSubmissionRecord({
+                    problemId,
+                    problem,
+                    language: payload.language || 'python',
+                    judgeResult: integrated.judgeResult,
+                    statusPayload: integrated.statusPayload,
+                })
+
+                if (nextProblem) {
+                    set((state) => mergeProblemIntoState(state, nextProblem))
+                }
+
+                if (username) {
+                    set((state) => {
+                        const previous = state.submissionsByUsername[username] || []
+                        const next = mergeSubmissionLists(previous, [submission])
+                        const previousProblems = state.problemsByUsername[username] || state.problems
+                        const nextProblems = nextProblem
+                            ? previousProblems.map((entry) => (
+                                String(entry.id) === String(nextProblem.id)
+                                    ? { ...entry, ...nextProblem }
+                                    : entry
+                            ))
+                            : previousProblems
+                        const nextSubmissionsByUsername = {
+                            ...state.submissionsByUsername,
+                            [username]: next,
+                        }
+                        persistLocalState({ submissionsByUsername: nextSubmissionsByUsername })
+
+                        return {
+                            problemsByUsername: {
+                                ...state.problemsByUsername,
+                                [username]: nextProblems,
+                            },
+                            submissionsByUsername: nextSubmissionsByUsername,
+                        }
+                    })
+                }
+
+                return {
+                    result: integrated.judgeResult,
+                    submission,
+                    problem: nextProblem || null,
+                }
+            } catch (error) {
+                if (!username || !shouldFallbackToLocalSubmission(error)) {
+                    throw error
+                }
+
+                const fallback = createLocalSubmissionFallback(
+                    { ...problem, id: problem?.id ?? problemId },
+                    { ...payload, problemId },
+                    error
+                )
+
+                set((state) => {
+                    const mergedState = mergeProblemIntoState(state, fallback.problem)
+                    const previous = state.submissionsByUsername[username] || []
+                    const nextSubmissions = mergeSubmissionLists(previous, [fallback.submission])
+                    const currentProblems = state.problemsByUsername[username] || mergedState.problems
+                    const nextProblems = currentProblems.map((entry) =>
+                        String(entry.id) === String(fallback.problem.id)
+                            ? { ...entry, ...fallback.problem }
+                            : entry
+                    )
+                    const nextSubmissionsByUsername = {
+                        ...state.submissionsByUsername,
+                        [username]: nextSubmissions,
+                    }
+                    persistLocalState({ submissionsByUsername: nextSubmissionsByUsername })
+
+                    return {
+                        ...mergedState,
+                        problemsByUsername: {
+                            ...state.problemsByUsername,
+                            [username]: nextProblems,
+                        },
+                        submissionsByUsername: nextSubmissionsByUsername,
+                    }
+                })
+
+                return fallback
+            }
+        }
 
         try {
             const response = await api.post(`/problem/problems/${problemId}/submit`, payload)

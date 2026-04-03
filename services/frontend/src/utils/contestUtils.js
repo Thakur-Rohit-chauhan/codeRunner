@@ -1,4 +1,13 @@
-export function getContestPhase(contest, now = Date.now()) {
+function parseVerificationFlag(value) {
+    if (value === undefined || value === null || value === '') return true
+    return !['0', 'false', 'off', 'no'].includes(String(value).trim().toLowerCase())
+}
+
+export function isContestVerificationMode() {
+    return parseVerificationFlag(import.meta.env?.VITE_FORCE_LIVE_CONTESTS)
+}
+
+export function getContestScheduledPhase(contest, now = Date.now()) {
     if (!contest?.startTime) return contest?.status || 'upcoming'
 
     const startTime = new Date(contest.startTime).getTime()
@@ -10,6 +19,12 @@ export function getContestPhase(contest, now = Date.now()) {
     if (now < startTime) return 'upcoming'
     if (durationMinutes > 0 && now < endTime) return 'active'
     return 'past'
+}
+
+export function getContestPhase(contest, now = Date.now()) {
+    if (!contest) return 'upcoming'
+    if (isContestVerificationMode()) return 'active'
+    return getContestScheduledPhase(contest, now)
 }
 
 export function isAccuracyContest(contest) {

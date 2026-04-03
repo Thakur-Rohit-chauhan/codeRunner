@@ -116,7 +116,7 @@ export default function Login() {
         try {
             await loginWithCredentials({ email: form.email, password: form.password })
             toast.success('Signed in successfully!')
-            navigate('/problems')
+            navigate('/problems?domain=DSA')
         } catch (error) {
             toast.error(error.response?.data?.detail || 'Unable to sign in')
         }
@@ -133,7 +133,7 @@ export default function Login() {
                 provider: 'google',
             })
             toast.success('Signed in with Google')
-            navigate('/problems')
+            navigate('/problems?domain=DSA')
         } catch (error) {
             toast.error(error.response?.data?.detail || 'Google sign-in failed')
         }

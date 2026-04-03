@@ -13,8 +13,10 @@ import useProblemStore from '../store/problemStore'
 import {
     getAggregatePrizePool,
     getContestPhase,
+    getContestScheduledPhase,
     getContestUserStats,
     getPrizeUnit,
+    isContestVerificationMode,
 } from '../utils/contestUtils'
 
 // ─── Countdown Hook ───────────────────────────────────────────────────────────
@@ -572,6 +574,7 @@ export default function Contests() {
     const navigate = useNavigate()
     const user = useAuthStore((state) => state.user)
     const now = useNow()
+    const verificationMode = isContestVerificationMode()
     const [tab, setTab] = useState('upcoming')
     const [showCreate, setShowCreate] = useState(false)
     const [editingContest, setEditingContest] = useState(null)
@@ -584,6 +587,7 @@ export default function Contests() {
         contests.map((contest) => ({
             contest,
             phase: getContestPhase(contest, now),
+            scheduledPhase: getContestScheduledPhase(contest, now),
             userStats: getContestUserStats(contest, user?.username),
         })),
         [contests, now, user?.username]
@@ -591,17 +595,19 @@ export default function Contests() {
 
     const upcomingContests = useMemo(() =>
         contestEntries
-            .filter(({ phase, contest }) => phase !== 'past' && (!searchQ || contest.title.toLowerCase().includes(searchQ.toLowerCase())))
+            .filter(({ phase, contest }) => (verificationMode || phase !== 'past') && (!searchQ || contest.title.toLowerCase().includes(searchQ.toLowerCase())))
             .sort((a, b) => new Date(a.contest.startTime) - new Date(b.contest.startTime)),
-        [contestEntries, searchQ]
+        [contestEntries, searchQ, verificationMode]
     )
 
-    const pastContests = useMemo(() =>
+    const scheduledPastContests = useMemo(() =>
         contestEntries
-            .filter(({ phase, contest }) => phase === 'past' && (!searchQ || contest.title.toLowerCase().includes(searchQ.toLowerCase())))
+            .filter(({ scheduledPhase, contest }) => scheduledPhase === 'past' && (!searchQ || contest.title.toLowerCase().includes(searchQ.toLowerCase())))
             .sort((a, b) => new Date(b.contest.startTime) - new Date(a.contest.startTime)),
         [contestEntries, searchQ]
     )
+
+    const pastContests = verificationMode ? [] : scheduledPastContests
 
     const featuredContests = upcomingContests.filter(({ contest }) => contest.featured)
     const regularContests  = upcomingContests.filter(({ contest }) => !contest.featured)
@@ -612,10 +618,10 @@ export default function Contests() {
     )
 
     const participatedContests = useMemo(() =>
-        pastContests.filter(({ userStats }) =>
+        scheduledPastContests.filter(({ userStats }) =>
             userStats.rank || userStats.score !== null || userStats.accuracy !== null || userStats.solved !== null
         ),
-        [pastContests]
+        [scheduledPastContests]
     )
 
     const bestRank = useMemo(() => {
@@ -639,8 +645,8 @@ export default function Contests() {
     )
 
     const liveContests = useMemo(
-        () => contestEntries.filter(({ phase }) => phase === 'active'),
-        [contestEntries]
+        () => verificationMode ? upcomingContests : contestEntries.filter(({ phase }) => phase === 'active'),
+        [contestEntries, upcomingContests, verificationMode]
     )
 
     const openContestRegistrations = useMemo(
@@ -662,11 +668,11 @@ export default function Contests() {
     const prizeUnit = useMemo(() => getPrizeUnit(contests), [contests])
 
     const heroStats = useMemo(() => [
-        { label: 'Open Registrations', value: openContestRegistrations.toLocaleString() },
-        { label: 'Contests Held', value: pastContests.length.toLocaleString() },
+        { label: verificationMode ? 'Live Entries' : 'Open Registrations', value: openContestRegistrations.toLocaleString() },
+        { label: 'Contests Held', value: scheduledPastContests.length.toLocaleString() },
         { label: 'Prize Pool', value: aggregatePrizePool > 0 ? `${aggregatePrizePool.toLocaleString()}${prizeUnit ? ` ${prizeUnit}` : ''}` : 'TBD' },
         { label: 'Countries Represented', value: representedCountries.size.toLocaleString() },
-    ], [aggregatePrizePool, openContestRegistrations, pastContests.length, prizeUnit, representedCountries.size])
+    ], [aggregatePrizePool, openContestRegistrations, prizeUnit, representedCountries.size, scheduledPastContests.length, verificationMode])
 
     const performanceStat = topScore > 0
         ? { label: 'Top Score', value: topScore.toLocaleString(), icon: <Star size={18} style={{ color: '#60a5fa' }} />, gradient: 'rgba(96,165,250,0.15)' }
@@ -740,7 +746,9 @@ export default function Contests() {
                     </div>
                     <h1 style={{ fontSize: '46px', fontWeight: 800, lineHeight: 1.1, background: 'linear-gradient(135deg,#f1f5f9 0%,#94a3b8 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', marginBottom: '14px', letterSpacing: '-0.02em' }}>Compete. Rank. Conquer.</h1>
                     <p style={{ fontSize: '16px', color: '#94a3b8', lineHeight: 1.7, marginBottom: '28px' }}>
-                        Track live contests, upcoming registrations, and your own performance from the contests currently in the system.
+                        {verificationMode
+                            ? 'Contest verification mode is enabled, so every contest is temporarily open as a live event for routing and arena checks.'
+                            : 'Track live contests, upcoming registrations, and your own performance from the contests currently in the system.'}
                     </p>
                     <div style={{ display: 'flex', justifyContent: 'center', gap: '24px', flexWrap: 'wrap', padding: '18px 28px', background: 'rgba(255,255,255,0.02)', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.06)' }}>
                         {heroStats.map(({ label, value }) => (
@@ -813,7 +821,9 @@ export default function Contests() {
                 {/* Toolbar */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '12px' }}>
                     <div style={{ display: 'flex', gap: '4px', background: 'rgba(255,255,255,0.03)', borderRadius: '14px', padding: '4px', border: '1px solid rgba(255,255,255,0.06)' }}>
-                        {[{ key: 'upcoming', label: 'Upcoming', icon: <Clock size={13} /> }, { key: 'past', label: 'Past', icon: <CheckCircle size={13} /> }].map(({ key, label, icon }) => (
+                        {(verificationMode
+                            ? [{ key: 'upcoming', label: 'Live', icon: <Zap size={13} /> }]
+                            : [{ key: 'upcoming', label: 'Upcoming', icon: <Clock size={13} /> }, { key: 'past', label: 'Past', icon: <CheckCircle size={13} /> }]).map(({ key, label, icon }) => (
                             <button key={key} onClick={() => setTab(key)} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 18px', borderRadius: '10px', fontSize: '14px', fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s', border: 'none', fontFamily: 'inherit', background: tab === key ? 'rgba(255,255,255,0.1)' : 'transparent', color: tab === key ? '#fff' : '#6b7280' }}>
                                 {icon} {label}
                             </button>
@@ -845,7 +855,7 @@ export default function Contests() {
                         )}
                         {regularContests.length > 0 && (
                             <div>
-                                <p style={{ fontSize: '11px', fontWeight: 700, color: '#6b7280', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: '14px' }}>All Upcoming</p>
+                                <p style={{ fontSize: '11px', fontWeight: 700, color: '#6b7280', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: '14px' }}>{verificationMode ? 'All Live' : 'All Upcoming'}</p>
                                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(320px,1fr))', gap: '16px' }}>
                                     {regularContests.map(({ contest }) => <UpcomingCard key={contest.id} contest={contest} featured={false} />)}
                                 </div>
@@ -854,7 +864,7 @@ export default function Contests() {
                         {upcomingContests.length === 0 && (
                             <div style={{ textAlign: 'center', padding: '60px 0', color: '#6b7280' }}>
                                 <Trophy size={40} style={{ marginBottom: '12px', opacity: 0.3 }} />
-                                <p style={{ fontSize: '16px' }}>No upcoming contests {searchQ && `matching "${searchQ}"`}</p>
+                                <p style={{ fontSize: '16px' }}>No {verificationMode ? 'live' : 'upcoming'} contests {searchQ && `matching "${searchQ}"`}</p>
                                 {isAdmin && (
                                     <button onClick={() => setShowCreate(true)} style={{ marginTop: '16px', padding: '10px 20px', borderRadius: '10px', background: 'rgba(52,211,153,0.1)', border: '1px solid rgba(52,211,153,0.2)', color: '#34d399', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
                                         + Create the first one

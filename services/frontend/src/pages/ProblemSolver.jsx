@@ -99,9 +99,14 @@ const diffBg = {
 }
 
 function getRunToast(problem) {
-    if (problem.domain === 'ML') return 'Evaluation run finished'
-    if (problem.domain === 'CTF') return 'Challenge run finished'
-    return 'Test passed!'
+    if (problem.domain === 'ML') return 'Validation passed'
+    if (problem.domain === 'CTF') return 'Packet validation passed'
+    return 'Visible tests passed'
+}
+
+function isSuccessfulRunResult(result) {
+    const normalizedStatus = String(result?.status || '').toLowerCase()
+    return Boolean(result?.allPassed) || normalizedStatus === 'finished' || normalizedStatus === 'completed'
 }
 
 function getSubmitToast(problem) {
@@ -129,6 +134,7 @@ export default function ProblemSolver() {
     const problemDetailsById = useProblemStore((state) => state.problemDetailsById)
     const submissionsByUsername = useProblemStore((state) => state.submissionsByUsername)
     const fetchProblemDetail = useProblemStore((state) => state.fetchProblemDetail)
+    const syncUserSubmissions = useProblemStore((state) => state.syncUserSubmissions)
     const runProblem = useProblemStore((state) => state.runProblem)
     const submitProblem = useProblemStore((state) => state.submitProblem)
     const toggleBookmark = useProblemStore((state) => state.toggleBookmark)
@@ -198,6 +204,11 @@ export default function ProblemSolver() {
     }, [fetchProblemDetail, id, user?.username])
 
     useEffect(() => {
+        if (!user?.username) return
+        syncUserSubmissions(user.username)
+    }, [syncUserSubmissions, user?.username])
+
+    useEffect(() => {
         setStarred(Boolean(problem.starred))
     }, [problem.id, problem.starred])
 
@@ -244,6 +255,7 @@ export default function ProblemSolver() {
     )
 
     const testResultCaseSummary = useMemo(() => {
+        if (testResult?.previewMode === 'custom_execution') return null
         if (!Array.isArray(testResult?.cases) || testResult.cases.length === 0) return null
 
         const passedCases = testResult.cases.filter((caseResult) => caseResult.status === 'Accepted').length
@@ -473,8 +485,11 @@ export default function ProblemSolver() {
             }
             setTestResult(nextResult)
 
-            const toastFn = nextResult.allPassed ? toast.success : toast.error
-            const toastMessage = nextResult.allPassed ? getRunToast(problem) : (nextResult.status || 'Run failed')
+            const runSucceeded = isSuccessfulRunResult(nextResult)
+            const toastFn = runSucceeded ? toast.success : toast.error
+            const toastMessage = nextResult.allPassed
+                ? getRunToast(problem)
+                : (runSucceeded ? 'Run finished' : (nextResult.status || 'Run failed'))
             toastFn(toastMessage, {
                 style: { background: 'rgba(30,36,44,0.95)', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' }
             })
@@ -1771,17 +1786,22 @@ export default function ProblemSolver() {
                                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                                                     {/* Status */}
                                                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                        {(() => {
+                                                            const successfulRun = isSuccessfulRunResult(testResult)
+                                                            return (
                                                         <div style={{
                                                             width: '22px', height: '22px', borderRadius: '50%', display: 'flex',
                                                             alignItems: 'center', justifyContent: 'center',
                                                             backgroundColor: getSubmissionStatusMeta(testResult.status).bg,
                                                         }}>
-                                                            {isAcceptedSubmission(testResult.status) ? (
+                                                            {successfulRun ? (
                                                                 <Check style={{ width: '13px', height: '13px', color: getSubmissionStatusMeta(testResult.status).color }} />
                                                             ) : (
                                                                 <X style={{ width: '13px', height: '13px', color: getSubmissionStatusMeta(testResult.status).color }} />
                                                             )}
                                                         </div>
+                                                            )
+                                                        })()}
                                                         <span style={{
                                                             fontSize: '16px', fontWeight: 700,
                                                             color: getSubmissionStatusMeta(testResult.status).color
@@ -1819,6 +1839,17 @@ export default function ProblemSolver() {
                                                         }}>
                                                             <p style={{ fontSize: '11px', color: '#6b7280', marginBottom: '6px', fontWeight: 500 }}>Output</p>
                                                             <pre style={{ fontSize: '13px', fontFamily: "'JetBrains Mono', monospace", color: '#e5e7eb', margin: 0 }}>{testResult.stdout}</pre>
+                                                        </div>
+                                                    )}
+
+                                                    {testResult.notice && (
+                                                        <div style={{
+                                                            padding: '12px 14px', borderRadius: '10px',
+                                                            backgroundColor: 'rgba(96,165,250,0.08)',
+                                                            border: '1px solid rgba(96,165,250,0.18)',
+                                                        }}>
+                                                            <p style={{ fontSize: '11px', color: '#93c5fd', marginBottom: '6px', fontWeight: 600 }}>Run Notice</p>
+                                                            <p style={{ fontSize: '13px', color: '#dbeafe', margin: 0, whiteSpace: 'pre-wrap' }}>{testResult.notice}</p>
                                                         </div>
                                                     )}
 

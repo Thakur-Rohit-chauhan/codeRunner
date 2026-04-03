@@ -8,7 +8,7 @@ import {
 import useContestStore from '../store/contestStore'
 import useAuthStore from '../store/authStore'
 import useProblemStore from '../store/problemStore'
-import api from '../services/api'
+import { submitIntegratedChallenge } from '../services/integratedJudge'
 import { getDefaultLanguageForDomain, getLanguagesForDomain, getStarterCodeForLanguage } from '../utils/compilerLanguages'
 
 // ─── Countdown Timer ──────────────────────────────────────────────────────────
@@ -227,24 +227,22 @@ export default function ContestArena() {
         }
     }, [activeAttempt?.answers, code, currentProblem, lang, saveAnswer, savedCodeForCurrentProblem])
 
-    const judgeContestProblem = async (mode) => {
+    const judgeContestProblem = async () => {
         if (!detail) {
             throw new Error('Problem details are unavailable')
         }
 
-        const response = await api.post(`/submission/${mode}`, {
-            problem: {
-                id: detail.id,
-                title: detail.title,
-                domain: detail.domain || contestDomain,
-                starterCode: detail.starterCode || {},
-                testCases: detail.testCases || [],
-            },
+        const response = await submitIntegratedChallenge({
+            domain: detail.domain || contestDomain,
+            submissionType: detail.submissionType,
             language: lang,
-            code,
+            sourceText: code,
+            entrypoint: isMlContest ? 'train' : undefined,
+            topology: contestDomain === 'CTF' ? contest?.title || 'contest-arena' : undefined,
+            problemId: currentProblem?.id,
         })
 
-        return response.data
+        return response.judgeResult
     }
 
     const handleRun = async () => {
@@ -252,7 +250,7 @@ export default function ContestArena() {
         setIsRunning(true)
         setRunOutput(null)
         try {
-            const result = await judgeContestProblem('run')
+            const result = await judgeContestProblem()
             setRunOutput(buildJudgeOutput(result, detail, isMlContest))
         } catch (error) {
             setRunOutput({
@@ -281,7 +279,7 @@ export default function ContestArena() {
         }))
 
         try {
-            const result = await judgeContestProblem('submit')
+            const result = await judgeContestProblem()
             const mappedStatus = mapJudgeStatus(result?.status)
             const currentAccuracy = isMlContest ? extractContestMetric(result?.stdout || '') : 0
             const acceptedAccuracy = mappedStatus === 'accepted' ? currentAccuracy : 0

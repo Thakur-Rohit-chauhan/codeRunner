@@ -128,7 +128,7 @@ export default function Register() {
                 displayName: form.fullName,
             })
             toast.success('Account created successfully!')
-            navigate('/problems')
+            navigate('/problems?domain=DSA')
         } catch (error) {
             toast.error(error.response?.data?.detail || 'Unable to create account')
         }
@@ -145,7 +145,7 @@ export default function Register() {
                 provider: 'google',
             })
             toast.success('Signed in with Google')
-            navigate('/problems')
+            navigate('/problems?domain=DSA')
         } catch (error) {
             toast.error(error.response?.data?.detail || 'Google sign-in failed')
         }

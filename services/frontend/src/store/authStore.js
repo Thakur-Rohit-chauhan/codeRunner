@@ -530,20 +530,31 @@ const socialLoginOffline = ({ username, email, displayName, provider = 'google' 
 }
 
 const applySession = (set, { user, token, users = [] }) => {
+    const localUsers = ensureLocalUsers()
     const normalizedUser = user ? ensureStableIdentity({
+        ...(localUsers[normalizeUsername(user.username || '')] || {}),
         ...user,
         isOnline: true,
         lastSeenAt: user.lastSeenAt || new Date().toISOString(),
     }) : null
+    const remoteDirectory = Object.fromEntries(
+        users
+            .map((remoteUser) => ensureStableIdentity({
+                ...(localUsers[normalizeUsername(remoteUser?.username || '')] || {}),
+                ...remoteUser,
+            }))
+            .filter(Boolean)
+            .map((remoteUser) => [remoteUser.username, remoteUser])
+    )
     const directory = {
-        ...mapUsers(users),
+        ...localUsers,
+        ...remoteDirectory,
         ...(normalizedUser ? { [normalizedUser.username]: normalizedUser } : {}),
     }
 
     persistToken(token)
     persistSessionUsername(normalizedUser?.username || null)
     persistLocalUsers({
-        ...ensureLocalUsers(),
         ...directory,
     })
 
@@ -584,7 +595,10 @@ const useAuthStore = create((set, get) => ({
         try {
             const response = await api.get('/auth/users')
             const users = Array.isArray(response.data?.users) ? response.data.users : []
-            const nextUsers = buildSyncedUsersDirectory(mapUsers(users))
+            const nextUsers = buildSyncedUsersDirectory({
+                ...get().users,
+                ...mapUsers(users),
+            })
             persistLocalUsers(nextUsers)
             pruneLocalPasswordsForUsers(nextUsers)
             set((state) => {
@@ -753,7 +767,10 @@ const useAuthStore = create((set, get) => ({
 
         try {
             const response = await api.patch('/auth/me', newData)
-            const nextUser = ensureStableIdentity(response.data?.user || optimistic)
+            const nextUser = ensureStableIdentity({
+                ...optimistic,
+                ...(response.data?.user || {}),
+            })
             persistLocalAccount({ user: nextUser })
             set((state) => ({
                 user: nextUser,

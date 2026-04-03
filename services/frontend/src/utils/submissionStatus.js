@@ -25,6 +25,15 @@ export function getSubmissionStatusMeta(status) {
         }
     }
 
+    if (normalized === 'finished' || normalized === 'completed') {
+        return {
+            color: '#60a5fa',
+            bg: 'rgba(96,165,250,0.12)',
+            border: 'rgba(96,165,250,0.2)',
+            dotColor: '#60a5fa',
+        }
+    }
+
     if (normalized.includes('wrong answer')) {
         return {
             color: '#f87171',

@@ -1,16 +1,50 @@
-# React + Vite
+# Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+This is the active web application for the integrated platform.
 
-Currently, two official plugins are available:
+## Purpose
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+The frontend talks to the unified backend at `/api` and provides:
 
-## React Compiler
+- login and registration
+- problem browsing by domain
+- live solver pages
+- contest views and contest arena submissions
+- profile and submission history views
+- leaderboard access
+- an admin/developer console
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Main Routes
 
-## Expanding the ESLint configuration
+- `/login`
+- `/register`
+- `/problems`
+- `/problems/:id`
+- `/profile/:username`
+- `/contests`
+- `/contests/:contestId`
+- `/contests/:contestId/arena`
+- `/console`
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+## Domain Lanes
+
+- `DSA` problems submit through `/submit/code`
+- `ML` problems submit through `/submit/ml`
+- `CTF` problems submit through `/submit/packet`
+
+The backend also returns routing metadata with each problem so the UI stays aligned with the active judge lane.
+
+## Contest Verification Mode
+
+The Docker build currently enables `VITE_FORCE_LIVE_CONTESTS=true`, which makes every contest render as live so arena entry, routing, and judging can be verified immediately.
+
+Set `VITE_FORCE_LIVE_CONTESTS=false` before rebuilding if you want the UI to go back to schedule-based contest timing.
+
+## Local Development
+
+```bash
+npm install
+npm run dev
+```
+
+The Docker deployment builds this app and serves it through Nginx on `http://localhost:3000`.

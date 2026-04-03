@@ -259,7 +259,7 @@ export default function ContestDetail() {
                                     <span style={{ width: '32px', height: '32px', borderRadius: '10px', background: 'rgba(52,211,153,0.1)', border: '1px solid rgba(52,211,153,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', fontWeight: 800, color: '#34d399', flexShrink: 0 }}>{String.fromCharCode(65 + i)}</span>
                                     <div style={{ flex: 1 }}>
                                         <p style={{ fontSize: '15px', fontWeight: 600, color: hoveredProblem === p.id ? '#34d399' : '#e5e7eb', marginBottom: '4px', transition: 'color 0.2s' }}>
-                                            {isPast || p.isCustom ? p.title : `Problem ${String.fromCharCode(65 + i)}`}
+                                            {isLive || isPast || p.isCustom ? p.title : `Problem ${String.fromCharCode(65 + i)}`}
                                         </p>
                                         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                                             {p.tags?.slice(0, 3).map(t => <span key={t} style={{ fontSize: '11px', color: '#6b7280', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)', padding: '2px 8px', borderRadius: '6px' }}>{t}</span>)}

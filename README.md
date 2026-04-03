@@ -1,72 +1,79 @@
-# Universal Contest Platform
+# Hybrid Education and Competition Platform
 
-A comprehensive monorepo for a universal contest platform supporting Data Structures & Algorithms, Machine Learning, and Cybersecurity challenges.
+This repository now runs as one integrated platform for three challenge lanes:
 
-## Architecture
+- `DSA` / algorithms
+- `ML` / notebook-style evaluation
+- `CTF` / packet-security challenges
 
-This platform follows a microservices architecture with the following components:
+The live runtime is a unified FastAPI control plane with Redis queues, PostgreSQL state, dedicated worker containers, and a React frontend.
 
-### Services
+## Active Architecture
 
-- **API Gateway**: Single entry point using NGINX for routing and load balancing
-- **Auth Service**: User authentication, authorization, and role management
-- **Contest Service**: Core contest logic, scheduling, and leaderboard management
-- **Problem Service**: Problem repository for DSA, ML, and Cyber challenges
-- **Judge Services**: Specialized execution engines
-  - `judge-standard`: C++/Python execution for DSA problems
-  - `judge-cyber`: Scapy-based packet analysis for cybersecurity challenges
-  - `judge-ml`: Papermill-based notebook evaluation for ML challenges
+Problem routing is enforced end to end:
 
-### Frontend
+- `DSA` problem -> `POST /submit/code` -> `queue:code:ready` -> logical worker pool `judge-standard`
+- `ML` problem -> `POST /submit/ml` -> `queue:ml:ready` -> logical worker pool `judge-ml`
+- `CTF` problem -> `POST /submit/packet` -> `queue:packet:ready` -> logical worker pool `judge-cyber`
 
-- **Creator Studio**: Admin interface for contest and problem management
-- **Contest Arena**: Participant interface for competing in contests
+The Docker services that host those pools are:
 
-### Infrastructure
+- `backend`
+- `judge-worker` for `judge-standard`
+- `ml-worker` for `judge-ml`
+- `packet-worker` for `judge-cyber`
+- `postgres`
+- `redis`
+- `frontend`
 
-- Kubernetes manifests for orchestration
-- ELK Stack for centralized logging
-- Prometheus for monitoring and alerting
+## Run Locally
 
-## Tech Stack
-
-- **Backend**: Python (FastAPI)
-- **Frontend**: React
-- **Infrastructure**: Docker, Kubernetes
-- **Message Queue**: RabbitMQ
-- **Database**: PostgreSQL
-- **Communication**: gRPC, REST APIs
-
-## Getting Started
-
-1. Start all services using Docker Compose:
-   ```bash
-   docker-compose up -d
-   ```
-
-2. Access services:
-   - API Gateway: http://localhost
-   - Frontend: http://localhost:3000
-   - RabbitMQ Management: http://localhost:15672
-
-## Project Structure
-
-```
-coderunner/
-├── common/              # Shared libraries and contracts
-├── infrastructure/     # K8s, monitoring, logging configs
-├── services/           # Microservices
-│   ├── api-gateway/
-│   ├── auth-service/
-│   ├── contest-service/
-│   ├── problem-service/
-│   ├── judge-standard/
-│   ├── judge-cyber/
-│   ├── judge-ml/
-│   └── frontend/
-└── docker-compose.yml  # Local development setup
+```bash
+docker compose up --build
 ```
 
-## Development
+Primary endpoints:
 
-Each service contains its own `Dockerfile` and `src/` directory. Refer to individual service README files for specific setup instructions.
+- Frontend: `http://localhost:3000`
+- Backend API: `http://localhost:8000/api`
+- Backend readiness: `http://localhost:8000/ready`
+
+Seeded admin credentials:
+
+- Email: `admin@gmail.com`
+- Password: `Admin123`
+
+## Repository Layout
+
+```text
+.
+├── alembic/                      # Database migrations
+├── infrastructure/
+│   └── docker/
+│       └── integration.Dockerfile
+├── integrated_platform/          # Shared runtime logic, judges, catalog, auth, models
+├── services/
+│   └── frontend/                 # React application
+├── orchestrator.py               # Unified FastAPI API
+├── queue_worker.py               # Redis-backed submission worker
+├── worker_manager.py             # Worker readiness server + loop host
+├── redis_queue.py                # Queue primitives and retry handling
+├── postgres_config.py            # Postgres settings helpers
+└── docker-compose.yml            # Production-style local stack
+```
+
+## Judge Behavior
+
+Algorithm submissions are compiled or executed against hidden test cases using the standard judge. ML submissions execute the required Python function and score against hidden datasets. Packet submissions execute Scapy-based builders and validate generated packets against challenge-specific rules.
+
+Supported code runtimes in the integrated judge image:
+
+- `python`
+- `cpp`
+- `java`
+- `javascript`
+
+## Notes
+
+- Legacy standalone microservice folders were removed from the active repo because the platform now runs through the integrated orchestrator and worker model.
+- `integration_architecture.md` and `deployment.md` describe the current production path in more detail.

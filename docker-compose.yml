@@ -1,227 +1,37 @@
-# ===================================================
-# Universal Contest Platform - Docker Compose
-# ===================================================
-# Phase 1: PostgreSQL + NGINX + Problem Service
-# Phase 2: RabbitMQ + Submission Service
-# Phase 3: gRPC on Problem Service
-# Phase 4: Judge-Standard Consumer Worker
-# Phase 5: Redis + Contest Service (Leaderboards)
-# Frontend-by-AR additions: auth-service support and
-# host port mappings aligned with the current frontend.
-# ===================================================
+x-platform-env: &platform-env
+  DATABASE_URL: postgresql+asyncpg://platform:platform@postgres:5432/platform
+  REDIS_URL: redis://redis:6379/0
+  SECRET_KEY: integrated-platform-secret
+  AUTO_CREATE_SCHEMA: "false"
+  SEED_DATA_ON_BOOT: "true"
+  QUEUE_RETRY_LIMIT: "3"
+  QUEUE_RETRY_BASE_DELAY_SECONDS: "2"
+  QUEUE_RETRY_MAX_DELAY_SECONDS: "30"
 
 services:
-
-  # ---------------------------------------------------
-  # Shared PostgreSQL Database
-  # ---------------------------------------------------
   postgres:
     image: postgres:16-alpine
-    container_name: platform-postgres
+    container_name: integrated-postgres
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-problem_user}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-secure_password_change_me}
-      POSTGRES_DB: ${POSTGRES_DB:-problems_db}
-      SUBMISSION_POSTGRES_USER: ${SUBMISSION_POSTGRES_USER:-submission_user}
-      SUBMISSION_POSTGRES_PASSWORD: ${SUBMISSION_POSTGRES_PASSWORD:-secure_password_change_me}
-      SUBMISSION_POSTGRES_DB: ${SUBMISSION_POSTGRES_DB:-submissions_db}
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./infrastructure/postgres/init:/docker-entrypoint-initdb.d:ro
+      POSTGRES_DB: platform
+      POSTGRES_USER: platform
+      POSTGRES_PASSWORD: platform
     ports:
       - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-problem_user}"]
+      test: ["CMD-SHELL", "pg_isready -U platform -d platform"]
       interval: 10s
       timeout: 5s
-      retries: 5
-    networks:
-      - platform-network
-
-  # ---------------------------------------------------
-  # Auth Service Database
-  # ---------------------------------------------------
-  auth-db:
-    image: postgres:15
-    container_name: platform-auth-db
-    environment:
-      POSTGRES_USER: user
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: authdb
-    volumes:
-      - auth_db_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U user"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    networks:
-      - platform-network
-
-  # ---------------------------------------------------
-  # Auth Service
-  # ---------------------------------------------------
-  auth-service:
-    build:
-      context: ./services/auth-service
-    container_name: platform-auth-service
-    environment:
-      DATABASE_URL: ${AUTH_DATABASE_URL:-postgresql://user:password@auth-db:5432/authdb}
-    ports:
-      - "8000:8000"
-    depends_on:
-      auth-db:
-        condition: service_healthy
-    networks:
-      - platform-network
+      retries: 8
+      start_period: 10s
     restart: unless-stopped
 
-  # ---------------------------------------------------
-  # Problem Service (FastAPI + gRPC)
-  # ---------------------------------------------------
-  problem-service:
-    build:
-      context: ./services/problem-service
-      dockerfile: Dockerfile
-    container_name: platform-problem-service
-    environment:
-      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://problem_user:secure_password_change_me@postgres:5432/problems_db}
-      LOG_LEVEL: ${LOG_LEVEL:-info}
-      ENVIRONMENT: ${ENVIRONMENT:-development}
-      SERVICE_NAME: problem-service
-      SERVICE_PORT: "8001"
-      GRPC_PORT: "${GRPC_PORT:-50051}"
-      SUBMISSION_SERVICE_URL: http://submission-service:8002
-    ports:
-      - "8001:8001"
-      - "50051:50051"
-    depends_on:
-      postgres:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 15s
-    networks:
-      - platform-network
-    restart: unless-stopped
-
-  # ---------------------------------------------------
-  # NGINX API Gateway
-  # ---------------------------------------------------
-  nginx:
-    image: nginx:alpine
-    container_name: platform-gateway
-    volumes:
-      - ./infrastructure/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-    ports:
-      - "80:80"
-    depends_on:
-      - auth-service
-      - problem-service
-      - submission-service
-      - contest-service
-    networks:
-      - platform-network
-    restart: unless-stopped
-
-  # ---------------------------------------------------
-  # RabbitMQ Message Broker
-  # ---------------------------------------------------
-  rabbitmq:
-    image: rabbitmq:3.13-management-alpine
-    container_name: platform-rabbitmq
-    environment:
-      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
-      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-guest}
-      RABBITMQ_DEFAULT_VHOST: /
-    volumes:
-      - rabbitmq_data:/var/lib/rabbitmq
-    ports:
-      - "5672:5672"
-      - "15672:15672"
-    healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "ping"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-    networks:
-      - platform-network
-    restart: unless-stopped
-
-  # ---------------------------------------------------
-  # Submission Service
-  # ---------------------------------------------------
-  submission-service:
-    build:
-      context: ./services/submission-service
-      dockerfile: Dockerfile
-    container_name: platform-submission-service
-    environment:
-      DATABASE_URL: ${SUBMISSION_DATABASE_URL:-postgresql+asyncpg://submission_user:secure_password_change_me@postgres:5432/submissions_db}
-      RABBITMQ_URL: ${RABBITMQ_URL:-amqp://guest:guest@rabbitmq:5672/}
-      LOG_LEVEL: ${LOG_LEVEL:-info}
-      ENVIRONMENT: ${ENVIRONMENT:-development}
-      SERVICE_NAME: submission-service
-      SERVICE_PORT: "8002"
-      PROBLEM_SERVICE_URL: http://problem-service:8001
-    ports:
-      - "8003:8002"
-    depends_on:
-      postgres:
-        condition: service_healthy
-      rabbitmq:
-        condition: service_healthy
-      problem-service:
-        condition: service_started
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 20s
-    networks:
-      - platform-network
-    restart: unless-stopped
-
-  # ---------------------------------------------------
-  # Judge-Standard Consumer Worker
-  # ---------------------------------------------------
-  judge-standard:
-    build:
-      context: ./services/judge-standard
-      dockerfile: Dockerfile
-    container_name: platform-judge-standard
-    environment:
-      DATABASE_URL: ${SUBMISSION_DATABASE_URL:-postgresql+asyncpg://submission_user:secure_password_change_me@postgres:5432/submissions_db}
-      RABBITMQ_URL: ${RABBITMQ_URL:-amqp://guest:guest@rabbitmq:5672/}
-      PROBLEM_SERVICE_GRPC: problem-service:50051
-      DOCKER_SECCOMP_PROFILE: /app/seccomp/untrusted-code.json
-      LOG_LEVEL: ${LOG_LEVEL:-info}
-      ENVIRONMENT: ${ENVIRONMENT:-development}
-      SERVICE_NAME: judge-standard
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - ./services/judge-standard/seccomp:/app/seccomp:ro
-    depends_on:
-      postgres:
-        condition: service_healthy
-      rabbitmq:
-        condition: service_healthy
-      problem-service:
-        condition: service_healthy
-    networks:
-      - platform-network
-    restart: unless-stopped
-
-  # ---------------------------------------------------
-  # Redis (Real-Time Leaderboards)
-  # ---------------------------------------------------
   redis:
     image: redis:7-alpine
-    container_name: platform-redis
+    container_name: integrated-redis
+    command: ["redis-server", "--appendonly", "yes"]
     ports:
       - "6379:6379"
     volumes:
@@ -230,82 +40,126 @@ services:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
-      retries: 5
-    networks:
-      - platform-network
+      retries: 8
+      start_period: 5s
     restart: unless-stopped
 
-  # ---------------------------------------------------
-  # Contest Service
-  # ---------------------------------------------------
-  contest-service:
+  backend:
     build:
-      context: ./services/contest-service
-      dockerfile: Dockerfile
-    container_name: platform-contest-service
+      context: .
+      dockerfile: infrastructure/docker/integration.Dockerfile
+    container_name: integrated-backend
     environment:
-      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://problem_user:secure_password_change_me@postgres:5432/problems_db}
-      REDIS_URL: ${REDIS_URL:-redis://:@redis:6379/0}
-      RABBITMQ_URL: ${RABBITMQ_URL:-amqp://guest:guest@rabbitmq:5672/}
-      LOG_LEVEL: ${LOG_LEVEL:-info}
-      ENVIRONMENT: ${ENVIRONMENT:-development}
-      SERVICE_NAME: contest-service
-      SERVICE_PORT: "8003"
+      <<: *platform-env
+      CORS_ORIGINS: http://localhost:3000,http://127.0.0.1:3000
+    command:
+      - /bin/sh
+      - -c
+      - alembic upgrade head && uvicorn orchestrator:app --host 0.0.0.0 --port 8000
     ports:
-      - "8002:8003"
+      - "8000:8000"
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
-      rabbitmq:
-        condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8003/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 15s
-    networks:
-      - platform-network
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 20s
     restart: unless-stopped
 
-  # ---------------------------------------------------
-  # Judge-ML Consumer Worker
-  # ---------------------------------------------------
-  judge-ml:
+  judge-worker:
     build:
-      context: ./services/judge-ml
-      dockerfile: Dockerfile
-    container_name: platform-judge-ml
+      context: .
+      dockerfile: infrastructure/docker/integration.Dockerfile
+    container_name: integrated-judge-worker
     environment:
-      DATABASE_URL: ${SUBMISSION_DATABASE_URL:-postgresql+asyncpg://submission_user:secure_password_change_me@postgres:5432/submissions_db}
-      RABBITMQ_URL: ${RABBITMQ_URL:-amqp://guest:guest@rabbitmq:5672/}
-      PROBLEM_SERVICE_GRPC: problem-service:50051
-      LOG_LEVEL: ${LOG_LEVEL:-info}
-      ENVIRONMENT: ${ENVIRONMENT:-development}
-      SERVICE_NAME: judge-ml
+      <<: *platform-env
+    command: ["python", "worker_manager.py", "code", "--host", "0.0.0.0", "--port", "8101"]
+    ports:
+      - "8101:8101"
     depends_on:
       postgres:
         condition: service_healthy
-      rabbitmq:
+      redis:
         condition: service_healthy
-      problem-service:
+      backend:
         condition: service_healthy
-    networks:
-      - platform-network
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8101/ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 15s
+    restart: unless-stopped
+
+  ml-worker:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/integration.Dockerfile
+    container_name: integrated-ml-worker
+    environment:
+      <<: *platform-env
+    command: ["python", "worker_manager.py", "ml", "--host", "0.0.0.0", "--port", "8102"]
+    ports:
+      - "8102:8102"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8102/ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 15s
+    restart: unless-stopped
+
+  packet-worker:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/integration.Dockerfile
+    container_name: integrated-packet-worker
+    environment:
+      <<: *platform-env
+    command: ["python", "worker_manager.py", "packet", "--host", "0.0.0.0", "--port", "8103"]
+    ports:
+      - "8103:8103"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8103/ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 15s
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./services/frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_FORCE_LIVE_CONTESTS: "true"
+    container_name: integrated-frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      backend:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:
   postgres_data:
-    driver: local
-  auth_db_data:
-    driver: local
-  rabbitmq_data:
-    driver: local
   redis_data:
-    driver: local
-
-networks:
-  platform-network:
-    driver: bridge

@@ -1,32 +1,21 @@
-# Build stage
-FROM node:18-alpine AS builder
+FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# Copy package files
-COPY package*.json ./
-COPY apps/*/package*.json ./apps/*/
+ARG VITE_FORCE_LIVE_CONTESTS=true
+ENV VITE_FORCE_LIVE_CONTESTS=${VITE_FORCE_LIVE_CONTESTS}
 
-# Install dependencies
+COPY package*.json ./
 RUN npm ci
 
-# Copy source code
 COPY . .
-
-# Build applications
 RUN npm run build
 
-# Production stage
-FROM nginx:alpine
+FROM nginx:1.27-alpine
 
-# Copy built files from builder
+COPY conf/default.conf /etc/nginx/conf.d/default.conf
 COPY --from=builder /app/dist /usr/share/nginx/html
 
-# Copy nginx configuration
-COPY nginx.conf /etc/nginx/conf.d/default.conf
-
-# Expose port
 EXPOSE 80
 
-# Start nginx
 CMD ["nginx", "-g", "daemon off;"]
