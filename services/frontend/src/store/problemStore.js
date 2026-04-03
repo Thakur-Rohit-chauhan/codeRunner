@@ -1,15 +1,9 @@
 import { create } from 'zustand'
 import api from '../services/api'
 import { buildStarterCodeMap } from '../utils/compilerLanguages'
-import {
-    getSeedProblemDetail,
-    seedProblemDetailsById,
-    seedProblemSummaries,
-    seedProblemTopics,
-} from '../utils/problemSeed'
 
 const LOCAL_SUBMISSIONS_STORAGE_KEY = 'coderunner_problem_submissions_v1'
-const LOCAL_PROBLEM_CATALOG_STORAGE_KEY = 'coderunner_problem_catalog_v1'
+const LOCAL_PROBLEM_CATALOG_STORAGE_KEY = 'coderunner_problem_catalog_v2'
 
 const defaultLocalState = {
     submissionsByUsername: {},
@@ -164,8 +158,8 @@ const createLocalSubmissionFallback = (problem, payload, error) => {
 const initialLocalState = safeReadLocalState()
 const initialLocalCatalogState = safeReadLocalCatalogState()
 const initialProblemCatalog = applyLocalProblemMutations({
-    problems: seedProblemSummaries,
-    problemDetailsById: seedProblemDetailsById,
+    problems: [],
+    problemDetailsById: {},
     overridesById: initialLocalCatalogState.overridesById,
     deletedIds: initialLocalCatalogState.deletedIds,
 })
@@ -174,7 +168,7 @@ const mergeProblemIntoState = (state, problem) => {
     if (!problem) return state
 
     const problemId = String(problem.id)
-    const existingDetail = state.problemDetailsById[problemId] || getSeedProblemDetail(problem.id)
+    const existingDetail = state.problemDetailsById[problemId] || {}
     const nextDetail = {
         ...(existingDetail || {}),
         ...problem,
@@ -212,7 +206,7 @@ function applyLocalProblemMutations({ problems = [], problemDetailsById = {}, ov
         const mergedProblem = override ? { ...problem, ...override } : problem
         seenIds.add(problemId)
         nextProblemDetailsById[problemId] = {
-            ...(nextProblemDetailsById[problemId] || getSeedProblemDetail(problem.id) || {}),
+            ...(nextProblemDetailsById[problemId] || {}),
             ...mergedProblem,
         }
         accumulator.push(mergedProblem)
@@ -223,7 +217,7 @@ function applyLocalProblemMutations({ problems = [], problemDetailsById = {}, ov
         if (!override || deletedSet.has(problemId) || seenIds.has(problemId)) return
         nextProblems.unshift(override)
         nextProblemDetailsById[problemId] = {
-            ...(nextProblemDetailsById[problemId] || getSeedProblemDetail(override.id) || {}),
+            ...(nextProblemDetailsById[problemId] || {}),
             ...override,
         }
     })
@@ -323,7 +317,7 @@ const useProblemStore = create((set, get) => ({
     problems: initialProblemCatalog.problems,
     problemDetailsById: initialProblemCatalog.problemDetailsById,
     problemsByUsername: {},
-    topics: seedProblemTopics,
+    topics: [],
     localProblemOverridesById: initialLocalCatalogState.overridesById,
     localDeletedProblemIds: initialLocalCatalogState.deletedIds,
     submissionsByUsername: initialLocalState.submissionsByUsername,
@@ -338,15 +332,14 @@ const useProblemStore = create((set, get) => ({
             const response = await api.get('/problem/problems', {
                 params: username ? { username } : undefined,
             })
-            const problems = Array.isArray(response.data?.problems) ? response.data.problems : seedProblemSummaries
-            const topics = Array.isArray(response.data?.topics) ? response.data.topics : seedProblemTopics
+            const problems = Array.isArray(response.data?.problems) ? response.data.problems : []
+            const topics = Array.isArray(response.data?.topics) ? response.data.topics : []
 
             set((state) => {
                 const nextDetails = { ...state.problemDetailsById }
                 problems.forEach((problem) => {
-                    const fallback = getSeedProblemDetail(problem.id)
                     nextDetails[String(problem.id)] = {
-                        ...(fallback || {}),
+                        ...(nextDetails[String(problem.id)] || {}),
                         ...problem,
                     }
                 })
@@ -372,22 +365,10 @@ const useProblemStore = create((set, get) => ({
                 }
             })
         } catch {
-            set((state) => {
-                const mutatedCatalog = applyLocalProblemMutations({
-                    problems: seedProblemSummaries,
-                    problemDetailsById: seedProblemDetailsById,
-                    overridesById: state.localProblemOverridesById,
-                    deletedIds: state.localDeletedProblemIds,
-                })
-
-                return {
-                    problems: mutatedCatalog.problems,
-                    topics: seedProblemTopics,
-                    problemDetailsById: mutatedCatalog.problemDetailsById,
-                    isSyncing: false,
-                    syncError: 'Unable to sync problems from the backend.',
-                    hasSynced: true,
-                }
+            set({
+                isSyncing: false,
+                syncError: 'Unable to sync problems from the backend.',
+                hasSynced: true,
             })
         }
     },
@@ -399,7 +380,7 @@ const useProblemStore = create((set, get) => ({
             const response = await api.get('/problem/problems', {
                 params: { username },
             })
-            const baseProblems = Array.isArray(response.data?.problems) ? response.data.problems : seedProblemSummaries
+            const baseProblems = Array.isArray(response.data?.problems) ? response.data.problems : []
             const mutatedProblems = applyLocalProblemMutations({
                 problems: baseProblems,
                 problemDetailsById: get().problemDetailsById,
@@ -434,7 +415,7 @@ const useProblemStore = create((set, get) => ({
                 ...(localOverride || {}),
             } : null
             if (!problem) {
-                return get().problemDetailsById[normalizedProblemId] || localOverride || getSeedProblemDetail(problemId)
+                return get().problemDetailsById[normalizedProblemId] || localOverride || null
             }
 
             set((state) => mergeProblemIntoState(state, problem))
@@ -445,7 +426,7 @@ const useProblemStore = create((set, get) => ({
         } catch {
             return get().problemDetailsById[normalizedProblemId]
                 || get().localProblemOverridesById[normalizedProblemId]
-                || getSeedProblemDetail(problemId)
+                || null
         }
     },
 
@@ -501,7 +482,7 @@ const useProblemStore = create((set, get) => ({
     },
 
     updateProblem: async (problemId, updates = {}) => {
-        const current = get().problemDetailsById[String(problemId)] || getSeedProblemDetail(problemId)
+        const current = get().problemDetailsById[String(problemId)] || null
         const payload = buildProblemMutationPayload(updates, current)
         try {
             const response = await api.put(`/problem/problems/${problemId}`, payload)
@@ -618,7 +599,7 @@ const useProblemStore = create((set, get) => ({
     toggleBookmark: async (problemId, username) => {
         if (!username) return null
 
-        const current = get().problemDetailsById[String(problemId)] || getSeedProblemDetail(problemId)
+        const current = get().problemDetailsById[String(problemId)] || { id: problemId }
         const nextStarred = !current?.starred
 
         set((state) => mergeProblemIntoState(state, {
@@ -728,7 +709,7 @@ const useProblemStore = create((set, get) => ({
                 throw error
             }
 
-            const fallbackProblem = get().problemDetailsById[String(problemId)] || getSeedProblemDetail(problemId)
+            const fallbackProblem = get().problemDetailsById[String(problemId)] || { id: problemId, title: 'Untitled problem', domain: 'DSA' }
             const fallback = createLocalSubmissionFallback(
                 { ...fallbackProblem, id: fallbackProblem?.id ?? problemId },
                 { ...payload, problemId },

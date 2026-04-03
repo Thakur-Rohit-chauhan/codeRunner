@@ -2,14 +2,29 @@ import { create } from 'zustand'
 import { buildStarterCodeMap } from '../utils/compilerLanguages'
 import api from '../services/api'
 import useProblemStore from './problemStore'
-import { getSeedProblemDetail, getSeedProblemIdsByDomain } from '../utils/problemSeed'
-
-// Grab a deterministic set of problem ids to seed contests
-const dsaIds = getSeedProblemIdsByDomain('DSA')
-const ctfIds = getSeedProblemIdsByDomain('CTF')
-const mlIds = getSeedProblemIdsByDomain('ML')
 
 const seed = (ids, n) => ids.slice(0, n)
+
+const normalizeDomain = (value) => {
+    const domain = String(value || '').trim().toUpperCase()
+    if (domain === 'CYBERSECURITY' || domain === 'CYBER' || domain === 'SECURITY') return 'CTF'
+    return domain
+}
+
+const getAvailableProblemIdsByDomain = (domain) => {
+    const targetDomain = normalizeDomain(domain)
+    const problemStore = useProblemStore.getState()
+    const records = problemStore.problems?.length
+        ? problemStore.problems
+        : Object.values(problemStore.problemDetailsById || {})
+
+    return records
+        .filter((problem) => normalizeDomain(problem?.domain) === targetDomain)
+        .map((problem) => problem.id)
+        .filter((id, index, all) => id != null && all.indexOf(id) === index)
+}
+
+const defaultContestProblemIds = (domain, count) => seed(getAvailableProblemIdsByDomain(domain), count)
 
 const scoreLeaderboard = (rows) => rows
     .slice()
@@ -79,7 +94,7 @@ const initialContests = [
         startTime: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000 + 5 * 60 * 60 * 1000).toISOString(),
         duration: 90,
         participants: 4812,
-        problemIds: seed(dsaIds, 4),
+        problemIds: defaultContestProblemIds('DSA', 4),
         difficulty: 'Mixed',
         prizes: ['500 CR Coins', '250 CR Coins', '100 CR Coins'],
         tags: ['DSA', 'Algorithms'],
@@ -98,7 +113,7 @@ const initialContests = [
         startTime: new Date(Date.now() + 9 * 24 * 60 * 60 * 1000).toISOString(),
         duration: 75,
         participants: 2341,
-        problemIds: seed(dsaIds, 3),
+        problemIds: defaultContestProblemIds('DSA', 3),
         difficulty: 'Easy–Medium',
         prizes: ['250 CR Coins', '100 CR Coins', '50 CR Coins'],
         tags: ['Arrays', 'Strings'],
@@ -117,7 +132,7 @@ const initialContests = [
         startTime: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
         duration: 180,
         participants: 1234,
-        problemIds: seed(ctfIds, 3),
+        problemIds: defaultContestProblemIds('CTF', 3),
         difficulty: 'Hard',
         prizes: ['2000 CR Coins', '1000 CR Coins', '500 CR Coins'],
         tags: ['CTF', 'Cryptography', 'Binary'],
@@ -136,7 +151,7 @@ const initialContests = [
         startTime: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
         duration: 90,
         participants: 5120,
-        problemIds: seed(dsaIds, 4),
+        problemIds: defaultContestProblemIds('DSA', 4),
         difficulty: 'Mixed',
         prizes: ['500 CR Coins', '250 CR Coins', '100 CR Coins'],
         tags: ['DSA', 'DP'],
@@ -156,7 +171,7 @@ const initialContests = [
         startTime: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString(),
         duration: 75,
         participants: 3876,
-        problemIds: seed(dsaIds, 3),
+        problemIds: defaultContestProblemIds('DSA', 3),
         difficulty: 'Easy–Medium',
         prizes: ['250 CR Coins'],
         tags: ['Graphs', 'Trees'],
@@ -176,7 +191,7 @@ const initialContests = [
         startTime: new Date(Date.now() - 21 * 24 * 60 * 60 * 1000).toISOString(),
         duration: 120,
         participants: 2210,
-        problemIds: seed(mlIds, 2),
+        problemIds: defaultContestProblemIds('ML', 2),
         difficulty: 'Medium–Hard',
         prizes: ['1500 CR Coins', '750 CR Coins', '300 CR Coins'],
         tags: ['ML', 'Statistics'],
@@ -488,18 +503,22 @@ const useContestStore = create((set, get) => ({
     isRegistered: (id) => !!get().registered[id],
     getLeaderboard: (id) => get().contests.find(c => c.id === id)?.leaderboard || [],
 
-    // Resolve problem objects for a contest (mixing mockProblems + customProblems)
+    // Resolve problem objects for a contest (backend/store data + customProblems)
     getProblemsForContest: (contest) => {
         if (!contest) return []
         const { customProblems } = get()
         const problemStore = useProblemStore.getState()
-        return (contest.problemIds || []).map(id => {
+        const fallbackCount = contest.domain === 'ML' ? 2 : 3
+        const problemIds = Array.isArray(contest.problemIds) && contest.problemIds.length
+            ? contest.problemIds
+            : defaultContestProblemIds(contest.domain, fallbackCount)
+
+        return problemIds.map(id => {
             const custom = customProblems.find(cp => cp.id === id)
             if (custom) return custom
             return (
                 problemStore.problemDetailsById[String(id)] ||
-                problemStore.problems.find(problem => String(problem.id) === String(id)) ||
-                getSeedProblemDetail(id)
+                problemStore.problems.find(problem => String(problem.id) === String(id))
             )
         }).filter(Boolean)
     },

@@ -619,14 +619,23 @@ const useAuthStore = create((set, get) => ({
         }
 
         try {
-            const [meResponse, usersResponse] = await Promise.all([
-                api.get('/auth/me'),
-                api.get('/auth/users'),
-            ])
+            const meResponse = await api.get('/auth/me')
+            let usersPayload = []
+            try {
+                const usersResponse = await api.get('/auth/users')
+                usersPayload = usersResponse.data?.users || []
+            } catch (usersError) {
+                if (shouldFallbackToLocalAuth(usersError)) {
+                    usersPayload = Object.values(ensureLocalUsers())
+                } else {
+                    // Most non-admin users are not allowed to call /auth/users.
+                    usersPayload = []
+                }
+            }
             applySession(set, {
                 user: meResponse.data?.user,
                 token,
-                users: usersResponse.data?.users || [],
+                users: usersPayload,
             })
             return meResponse.data?.user || null
         } catch (error) {

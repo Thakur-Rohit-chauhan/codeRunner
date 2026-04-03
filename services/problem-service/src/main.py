@@ -1,22 +1,28 @@
 from __future__ import annotations
 
+import asyncio
 from copy import deepcopy
 from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
-from threading import Lock
 from typing import Any
 from urllib import error as urllib_error
 from urllib import request as urllib_request
 
+import asyncpg
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 
-SEED_PATH = Path(__file__).resolve().parents[2] / "frontend" / "src" / "data" / "problemSeed.json"
+SEED_PATH_CANDIDATES = [
+    Path(__file__).resolve().parents[2] / "frontend" / "src" / "data" / "problemSeed.json",
+    Path(__file__).resolve().parents[1] / "data" / "problemSeed.json",
+    Path("/app/src/data/problemSeed.json"),
+]
 SUBMISSION_SERVICE_URL = os.environ.get("SUBMISSION_SERVICE_URL", "http://127.0.0.1:8003")
+DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql+asyncpg://problem_user:secure_password_change_me@postgres:5432/problems_db")
 
 
 def utc_now_iso() -> str:
@@ -61,13 +67,17 @@ def normalize_test_cases(test_cases: list[dict[str, Any]] | None) -> list[dict[s
 
 
 def load_seed() -> dict[str, Any]:
-    return json.loads(SEED_PATH.read_text(encoding="utf-8"))
+    for seed_path in SEED_PATH_CANDIDATES:
+        if seed_path.exists():
+            return json.loads(seed_path.read_text(encoding="utf-8"))
+    return {"problems": []}
 
 
 _seed_data = load_seed()
 _seed_records = list(_seed_data.get("problems") or [])
 _catalog = {str(problem["id"]): deepcopy(problem) for problem in _seed_records}
 _catalog_order = [str(problem["id"]) for problem in _seed_records]
+_topics = deepcopy(_seed_data.get("topics") or [])
 _default_state = {
     problem_id: {
         "status": problem.get("defaultStatus"),
@@ -301,6 +311,109 @@ class ProblemMutationRequest(BaseModel):
     companies: list[str] | None = None
 
 
+def normalize_database_url(url: str) -> str:
+    if url.startswith("postgresql+asyncpg://"):
+        return "postgresql://" + url[len("postgresql+asyncpg://"):]
+    return url
+
+
+_db_pool: asyncpg.Pool | None = None
+
+
+async def init_catalog_storage() -> None:
+    global _db_pool, _catalog, _catalog_order, _default_state
+
+    if _db_pool is not None:
+        return
+
+    _db_pool = await asyncpg.create_pool(
+        dsn=normalize_database_url(DATABASE_URL),
+        min_size=1,
+        max_size=5,
+    )
+
+    async with _db_pool.acquire() as conn:
+        await conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS problems_catalog (
+                id INTEGER PRIMARY KEY,
+                problem_json JSONB NOT NULL,
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+            """
+        )
+
+        rows = await conn.fetch(
+            "SELECT id, problem_json FROM problems_catalog ORDER BY id ASC"
+        )
+
+        if not rows:
+            if _seed_records:
+                await conn.executemany(
+                    """
+                    INSERT INTO problems_catalog (id, problem_json, updated_at)
+                    VALUES ($1, $2::jsonb, NOW())
+                    ON CONFLICT (id) DO UPDATE
+                    SET problem_json = EXCLUDED.problem_json, updated_at = NOW()
+                    """,
+                    [
+                        (int(problem["id"]), json.dumps(problem))
+                        for problem in _seed_records
+                    ],
+                )
+            rows = await conn.fetch(
+                "SELECT id, problem_json FROM problems_catalog ORDER BY id ASC"
+            )
+
+    _catalog = {}
+    _catalog_order = []
+    _default_state = {}
+
+    for row in rows:
+        raw_problem = row["problem_json"]
+        if isinstance(raw_problem, str):
+            problem = json.loads(raw_problem)
+        elif isinstance(raw_problem, dict):
+            problem = raw_problem
+        else:
+            problem = dict(raw_problem)
+        problem_id = str(problem.get("id") or row["id"])
+        problem["id"] = int(problem_id)
+        _catalog[problem_id] = problem
+        _catalog_order.append(problem_id)
+        _default_state[problem_id] = {
+            "status": problem.get("defaultStatus"),
+            "starred": bool(problem.get("defaultStarred")),
+            "lastSubmitted": problem.get("defaultLastSubmitted"),
+        }
+
+
+async def persist_problem(problem: dict[str, Any]) -> None:
+    if _db_pool is None:
+        return
+    async with _db_pool.acquire() as conn:
+        await conn.execute(
+            """
+            INSERT INTO problems_catalog (id, problem_json, updated_at)
+            VALUES ($1, $2::jsonb, NOW())
+            ON CONFLICT (id) DO UPDATE
+            SET problem_json = EXCLUDED.problem_json, updated_at = NOW()
+            """,
+            int(problem["id"]),
+            json.dumps(problem),
+        )
+
+
+async def remove_problem_from_storage(problem_id: str) -> None:
+    if _db_pool is None:
+        return
+    async with _db_pool.acquire() as conn:
+        await conn.execute(
+            "DELETE FROM problems_catalog WHERE id = $1",
+            int(problem_id),
+        )
+
+
 app = FastAPI(title="Problem Service", version="0.1.0")
 app.add_middleware(
     CORSMiddleware,
@@ -310,8 +423,21 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-_lock = Lock()
+_lock = asyncio.Lock()
 _user_state: dict[str, dict[str, Any]] = {}
+
+
+@app.on_event("startup")
+async def on_startup() -> None:
+    await init_catalog_storage()
+
+
+@app.on_event("shutdown")
+async def on_shutdown() -> None:
+    global _db_pool
+    if _db_pool is not None:
+        await _db_pool.close()
+        _db_pool = None
 
 
 @app.get("/health")
@@ -329,7 +455,7 @@ def list_problems(username: str | None = None) -> dict[str, Any]:
 
     return {
         "problems": problems,
-        "topics": deepcopy(_seed_data.get("topics") or []),
+        "topics": deepcopy(_topics),
     }
 
 
@@ -352,45 +478,48 @@ def get_user_submissions(username: str) -> dict[str, list[dict[str, Any]]]:
 
 
 @app.post("/problems")
-def create_problem(payload: ProblemMutationRequest) -> dict[str, Any]:
-    with _lock:
+async def create_problem(payload: ProblemMutationRequest) -> dict[str, Any]:
+    async with _lock:
         problem_id = next_problem_id()
         problem = build_problem_record(problem_id, payload)
         _catalog[str(problem_id)] = problem
         _catalog_order.append(str(problem_id))
         _default_state[str(problem_id)] = build_problem_state(str(problem_id))
         sync_user_problem_state(str(problem_id))
+        await persist_problem(problem)
         return {"problem": build_problem_detail(problem, build_problem_state(str(problem_id)))}
 
 
 @app.put("/problems/{problem_id}")
-def update_problem(problem_id: str, payload: ProblemMutationRequest) -> dict[str, Any]:
-    with _lock:
+async def update_problem(problem_id: str, payload: ProblemMutationRequest) -> dict[str, Any]:
+    async with _lock:
         existing = get_problem_or_404(problem_id)
         updated = build_problem_record(existing["id"], payload, existing)
         _catalog[str(problem_id)] = updated
+        await persist_problem(updated)
         return {"problem": build_problem_detail(updated, build_problem_state(str(problem_id)))}
 
 
 @app.delete("/problems/{problem_id}")
-def delete_problem(problem_id: str) -> dict[str, Any]:
-    with _lock:
+async def delete_problem(problem_id: str) -> dict[str, Any]:
+    async with _lock:
         get_problem_or_404(problem_id)
         _catalog.pop(str(problem_id), None)
         _default_state.pop(str(problem_id), None)
         _catalog_order[:] = [entry for entry in _catalog_order if str(entry) != str(problem_id)]
         remove_user_problem_state(str(problem_id))
+        await remove_problem_from_storage(str(problem_id))
         return {"ok": True}
 
 
 @app.post("/problems/{problem_id}/bookmark")
-def toggle_bookmark(problem_id: str, payload: BookmarkRequest) -> dict[str, Any]:
+async def toggle_bookmark(problem_id: str, payload: BookmarkRequest) -> dict[str, Any]:
     problem = get_problem_or_404(problem_id)
     normalized_username = normalize_username(payload.username)
     if not normalized_username:
         raise HTTPException(status_code=400, detail="Username is required")
 
-    with _lock:
+    async with _lock:
         state = get_problem_state(str(problem["id"]), normalized_username)
         state["starred"] = (not bool(state.get("starred"))) if payload.starred is None else bool(payload.starred)
         return {"problem": build_problem_summary(problem, state)}
@@ -404,7 +533,7 @@ def run_problem(problem_id: str, payload: RunRequest) -> dict[str, dict[str, Any
 
 
 @app.post("/problems/{problem_id}/submit")
-def submit_problem(problem_id: str, payload: SubmitRequest) -> dict[str, Any]:
+async def submit_problem(problem_id: str, payload: SubmitRequest) -> dict[str, Any]:
     problem = get_problem_or_404(problem_id)
     normalized_username = normalize_username(payload.username)
     if not normalized_username:
@@ -413,7 +542,7 @@ def submit_problem(problem_id: str, payload: SubmitRequest) -> dict[str, Any]:
     result = call_submission_service("/submit", build_submission_payload(problem, payload.language, payload.code))
     now = utc_now_iso()
 
-    with _lock:
+    async with _lock:
         state = get_problem_state(str(problem["id"]), normalized_username)
         state["lastSubmitted"] = now
         state["status"] = "solved" if result["status"] == "Accepted" else "attempted"
