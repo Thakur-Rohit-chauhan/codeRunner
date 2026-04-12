@@ -1,2 +1,9 @@
+aiosqlite
+asyncpg
+bcrypt<5
+email-validator
 fastapi
-uvicorn
+passlib[bcrypt]
+python-jose[cryptography]
+sqlalchemy>=2.0.0
+uvicorn[standard]

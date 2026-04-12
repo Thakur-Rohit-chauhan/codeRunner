@@ -103,7 +103,7 @@ export default function Register() {
     const [showPw, setShowPw] = useState(false)
     const [agreedTerms, setAgreedTerms] = useState(false)
     const registerAccount = useAuthStore((state) => state.registerAccount)
-    const socialLogin = useAuthStore((state) => state.socialLogin)
+    const beginOAuthLogin = useAuthStore((state) => state.beginOAuthLogin)
     const navigate = useNavigate()
 
     const update = (field) => (e) => setForm({ ...form, [field]: e.target.value })
@@ -135,17 +135,8 @@ export default function Register() {
     }
 
     const handleGoogle = async () => {
-        const fallbackKey = form.username || `google_${Date.now()}`
-
         try {
-            await socialLogin({
-                username: fallbackKey,
-                email: form.email || `${fallbackKey}@coderunner.dev`,
-                displayName: form.fullName || 'Google User',
-                provider: 'google',
-            })
-            toast.success('Signed in with Google')
-            navigate('/problems')
+            await beginOAuthLogin('google')
         } catch (error) {
             toast.error(error.response?.data?.detail || 'Google sign-in failed')
         }

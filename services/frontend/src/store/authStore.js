@@ -619,14 +619,23 @@ const useAuthStore = create((set, get) => ({
         }
 
         try {
-            const [meResponse, usersResponse] = await Promise.all([
-                api.get('/auth/me'),
-                api.get('/auth/users'),
-            ])
+            const meResponse = await api.get('/auth/me')
+            let usersPayload = []
+            try {
+                const usersResponse = await api.get('/auth/users')
+                usersPayload = usersResponse.data?.users || []
+            } catch (usersError) {
+                if (shouldFallbackToLocalAuth(usersError)) {
+                    usersPayload = Object.values(ensureLocalUsers())
+                } else {
+                    // Most non-admin users are not allowed to call /auth/users.
+                    usersPayload = []
+                }
+            }
             applySession(set, {
                 user: meResponse.data?.user,
                 token,
-                users: usersResponse.data?.users || [],
+                users: usersPayload,
             })
             return meResponse.data?.user || null
         } catch (error) {
@@ -687,6 +696,30 @@ const useAuthStore = create((set, get) => ({
             applySession(set, offlineResponse)
             return offlineResponse.user
         }
+    },
+
+    beginOAuthLogin: async (provider = 'google') => {
+        const response = await api.get(`/auth/oauth/${provider}/authorize`)
+        let authorizationUrl = response.data?.authorization_url
+        if (!authorizationUrl) {
+            throw new Error('OAuth authorization URL is missing')
+        }
+
+        if (provider === 'google' && !/[?&]prompt=/.test(authorizationUrl)) {
+            authorizationUrl = `${authorizationUrl}${authorizationUrl.includes('?') ? '&' : '?'}prompt=select_account`
+        }
+
+        window.location.assign(authorizationUrl)
+    },
+
+    completeOAuthLogin: async (provider = 'google', search = '') => {
+        const query = search
+            ? (search.startsWith('?') ? search : `?${search}`)
+            : ''
+        const response = await api.get(`/auth/oauth/${provider}/callback${query}`)
+        applySession(set, response.data || {})
+        persistLocalAccount({ user: response.data?.user })
+        return response.data?.user || null
     },
 
     socialLogin: async ({ username, email, displayName, provider = 'google' }) => {

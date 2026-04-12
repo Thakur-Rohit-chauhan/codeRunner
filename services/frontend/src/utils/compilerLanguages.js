@@ -35,197 +35,117 @@ export function getDefaultLanguageForDomain(domain = 'DSA') {
     return domain === 'DSA' ? 'cpp' : 'python'
 }
 
-function getDsaStarterCode(title, languageKey) {
+function getDsaStarterCode(_title, languageKey) {
     switch (languageKey) {
         case 'cpp':
-            return `// ${title}
-class Solution {
-public:
-    void solve() {
-        // Write your solution here
-    }
-};`
+            return `#include <bits/stdc++.h>
+using namespace std;
+
+int main() {
+    ios::sync_with_stdio(false);
+    cin.tie(nullptr);
+
+    // Write your solution here
+
+    return 0;
+}`
         case 'c':
-            return `// ${title}
-#include <stdio.h>
+            return `#include <stdio.h>
 
 int main(void) {
     // Write your solution here
     return 0;
 }`
         case 'python':
-            return `# ${title}
-class Solution:
-    def solve(self):
-        # Write your solution here
-        pass`
+            return `# Write your solution here`
         case 'java':
-            return `// ${title}
-class Solution {
-    public void solve() {
+            return `import java.io.*;
+import java.util.*;
+
+public class Main {
+    public static void main(String[] args) throws Exception {
         // Write your solution here
     }
 }`
         case 'javascript':
-            return `// ${title}
-var solve = function() {
-    // Write your solution here
-};`
+            return `// Write your solution here`
         case 'typescript':
-            return `// ${title}
-function solve(): void {
-    // Write your solution here
-}`
+            return `// Write your solution here`
         case 'go':
-            return `// ${title}
-func solve() {
+            return `package main
+
+func main() {
     // Write your solution here
 }`
         case 'csharp':
-            return `// ${title}
-using System;
+            return `using System;
 
-public class Solution {
-    public void Solve() {
+public class Program {
+    public static void Main() {
         // Write your solution here
     }
 }`
         case 'rust':
-            return `// ${title}
-fn solve() {
+            return `fn main() {
     // Write your solution here
-}
-
-fn main() {
-    solve();
 }`
         case 'kotlin':
-            return `// ${title}
-class Solution {
-    fun solve() {
-        // Write your solution here
-    }
+            return `fun main() {
+    // Write your solution here
 }`
         default:
-            return `// ${title}
-// Write your solution here`
+            return `// Write your solution here`
     }
 }
 
-function getMlStarterCode(title, languageKey) {
+function getMlStarterCode(_title, languageKey) {
     switch (languageKey) {
         case 'python':
-            return `# ${title}
-import numpy as np
-
-def train_model(train_data, valid_data):
-    # TODO: preprocess data, train a model, and return metrics
-    pass
-
-def predict(model, features):
-    # TODO: return predictions for evaluation
-    pass`
+            return `# Write your solution here`
         case 'r':
-            return `# ${title}
-library(tidyverse)
-
-train_model <- function(train_data, valid_data) {
-  # TODO: preprocess data and fit a model
-}
-
-predict_labels <- function(model, data) {
-  # TODO: return predictions
-}`
+            return `# Write your solution here`
         case 'sql':
-            return `-- ${title}
--- Use SQL for feature engineering or dataset validation.
-WITH dataset AS (
-    SELECT *
-    FROM training_data
-)
-SELECT *
-FROM dataset
-LIMIT 100;`
+            return `-- Write your solution here`
         case 'julia':
-            return `# ${title}
-using DataFrames
-using Statistics
-
-function train_model(train_df, valid_df)
-    # TODO: fit a model and report validation accuracy
-end
-
-function predict(model, features)
-    # TODO: return predictions
-end`
+            return `# Write your solution here`
         default:
-            return `# ${title}
-# Write your ML pipeline here`
+            return `# Write your solution here`
     }
 }
 
-function getCyberStarterCode(title, languageKey) {
+function getCyberStarterCode(_title, languageKey) {
     switch (languageKey) {
         case 'python':
-            return `# ${title}
-import requests
-
-def solve():
-    # TODO: automate the analysis or exploit flow
-    pass
-
-if __name__ == '__main__':
-    solve()`
+            return `# Write your solution here`
         case 'bash':
             return `#!/usr/bin/env bash
-# ${title}
-set -euo pipefail
-
-# TODO: automate the recon / exploit flow`
+# Write your solution here`
         case 'c':
-            return `// ${title}
-#include <stdio.h>
-#include <string.h>
+            return `#include <stdio.h>
 
 int main(void) {
-    // TODO: craft or verify the exploit logic
+    // Write your solution here
     return 0;
 }`
         case 'cpp':
-            return `// ${title}
-#include <iostream>
-#include <string>
+            return `#include <bits/stdc++.h>
+using namespace std;
 
 int main() {
-    // TODO: implement the exploit or parser
+    // Write your solution here
     return 0;
 }`
         case 'javascript':
-            return `// ${title}
-async function solve() {
-    // TODO: automate the challenge steps
-}
-
-solve()`
+            return `// Write your solution here`
         case 'powershell':
-            return `# ${title}
-Set-StrictMode -Version Latest
-
-function Invoke-Challenge {
-    # TODO: automate the exploit or analysis flow
-}
-
-Invoke-Challenge`
+            return `# Write your solution here`
         default:
-            return `# ${title}
-# Write your cyber challenge solution here`
+            return `# Write your solution here`
     }
 }
 
 export function getStarterCodeForLanguage(problem, languageKey) {
     const title = problem?.title || 'Untitled Problem'
-    const existingStarter = problem?.starterCode?.[languageKey]
-    if (existingStarter) return existingStarter
 
     if (problem?.domain === 'ML') return getMlStarterCode(title, languageKey)
     if (problem?.domain === 'CTF') return getCyberStarterCode(title, languageKey)

@@ -12,6 +12,7 @@ import resource
 import shutil
 import signal
 import subprocess
+import sys
 import tempfile
 from time import perf_counter
 from typing import Any, Literal
@@ -21,13 +22,36 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 
+def resolve_binary(*candidates: str) -> str:
+    for candidate in candidates:
+        if not candidate:
+            continue
+        if os.path.isabs(candidate):
+            if os.path.exists(candidate):
+                return candidate
+            continue
+        resolved = shutil.which(candidate)
+        if resolved:
+            return resolved
+    return ""
+
+
+PYTHON_BINARY = resolve_binary(sys.executable, "python3", "python")
+NODE_BINARY = resolve_binary("node")
+CPP_BINARY = resolve_binary("g++")
+JAVAC_BINARY = resolve_binary("javac")
+JAVA_BINARY = resolve_binary("java")
+RSCRIPT_BINARY = resolve_binary("Rscript")
+SANDBOX_EXEC_BINARY = resolve_binary("/usr/bin/sandbox-exec", "sandbox-exec")
+
+
 SUPPORTED_LANGUAGES = {
-    "python": {"mode": "interpreted", "extension": ".py", "run": ["/opt/anaconda3/bin/python3"], "runtime": "python"},
-    "javascript": {"mode": "interpreted", "extension": ".js", "run": [shutil.which("node") or "node"], "runtime": "node"},
-    "cpp": {"mode": "compiled", "extension": ".cpp", "compile": ["/usr/bin/g++", "-std=c++17", "-O2"], "runtime": "cpp"},
-    "java": {"mode": "compiled", "extension": ".java", "compile": ["/usr/bin/javac"], "run": ["/usr/bin/java"], "runtime": "java"},
+    "python": {"mode": "interpreted", "extension": ".py", "run": [PYTHON_BINARY], "runtime": "python"},
+    "javascript": {"mode": "interpreted", "extension": ".js", "run": [NODE_BINARY], "runtime": "node"},
+    "cpp": {"mode": "compiled", "extension": ".cpp", "compile": [CPP_BINARY, "-std=c++17", "-O2"], "runtime": "cpp"},
+    "java": {"mode": "compiled", "extension": ".java", "compile": [JAVAC_BINARY], "run": [JAVA_BINARY], "runtime": "java"},
     "bash": {"mode": "interpreted", "extension": ".sh", "run": ["/bin/bash"], "runtime": "bash"},
-    "r": {"mode": "interpreted", "extension": ".R", "run": [shutil.which("Rscript") or "Rscript"], "runtime": "r"},
+    "r": {"mode": "interpreted", "extension": ".R", "run": [RSCRIPT_BINARY], "runtime": "r"},
 }
 
 LANGUAGE_ALIASES = {
@@ -141,6 +165,20 @@ def apply_limits() -> None:
 
 
 def safe_run(command: list[str], *, cwd: str, stdin: str = "", sandboxed: bool = True) -> subprocess.CompletedProcess[str]:
+    if not command or not command[0]:
+        raise FileNotFoundError("No executable configured for this language")
+
+    executable = command[0]
+    if os.path.isabs(executable):
+        if not os.path.exists(executable):
+            raise FileNotFoundError(f"Executable not found: {executable}")
+        normalized_command = command
+    else:
+        resolved = shutil.which(executable)
+        if not resolved:
+            raise FileNotFoundError(f"Executable not found in PATH: {executable}")
+        normalized_command = [resolved, *command[1:]]
+
     env = {
         "HOME": cwd,
         "PATH": os.environ.get("PATH", ""),
@@ -148,7 +186,9 @@ def safe_run(command: list[str], *, cwd: str, stdin: str = "", sandboxed: bool =
         "PYTHONDONTWRITEBYTECODE": "1",
         "PYTHONNOUSERSITE": "1",
     }
-    wrapped = ["/usr/bin/sandbox-exec", "-p", sandbox_profile(cwd), *command] if sandboxed else command
+    wrapped = [SANDBOX_EXEC_BINARY, "-p", sandbox_profile(cwd), *normalized_command] if sandboxed and SANDBOX_EXEC_BINARY else normalized_command
+
+    timeout_seconds = CPU_LIMIT_SECONDS + 2 if sandboxed else 20
 
     return subprocess.run(
         wrapped,
@@ -156,9 +196,9 @@ def safe_run(command: list[str], *, cwd: str, stdin: str = "", sandboxed: bool =
         input=stdin,
         text=True,
         capture_output=True,
-        timeout=CPU_LIMIT_SECONDS + 2,
+        timeout=timeout_seconds,
         env=env,
-        preexec_fn=apply_limits,
+        preexec_fn=apply_limits if sandboxed else None,
     )
 
 
@@ -411,6 +451,8 @@ def detect_signature(problem: ProblemPayload, language: str) -> SignatureInfo:
         return SignatureInfo(style="named", callable_name=callable_name)
 
     if language == "java":
+        if re.search(r"static\s+void\s+main\s*\(", starter_code):
+            return SignatureInfo(style="script")
         match = re.search(r"public\s+.+?\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(", starter_code)
         if not match:
             return SignatureInfo(style="script")
@@ -420,7 +462,8 @@ def detect_signature(problem: ProblemPayload, language: str) -> SignatureInfo:
         return SignatureInfo(style="named", callable_name=callable_name, param_types=infer_java_param_types(starter_code, callable_name))
 
     if language == "cpp":
-        match = re.search(r"([A-Za-z_][A-Za-z0-9_]*)\s*\(", starter_code)
+        if re.search(r"\bint\s+main\s*\(", starter_code):
+            return SignatureInfo(style="script")
         matches = re.findall(r"([A-Za-z_][A-Za-z0-9_]*)\s*\(", starter_code)
         callable_name = next((name for name in matches[::-1] if name not in {"if", "for", "while", "switch"}), None)
         if not callable_name:
@@ -831,7 +874,7 @@ def judge_case(problem: ProblemPayload, language: str, code: str, case: TestCase
         source_path.write_text(source, encoding="utf-8")
 
         compile_command, run_command = execution_commands(language, source_path)
-        stdin_payload = case.input if signature.style == "solve" or problem.domain != "DSA" else ""
+        stdin_payload = case.input if signature.style in {"solve", "script"} or problem.domain != "DSA" else ""
         start = perf_counter()
 
         if compile_command:
@@ -839,6 +882,8 @@ def judge_case(problem: ProblemPayload, language: str, code: str, case: TestCase
                 compiled = safe_run(compile_command, cwd=tempdir, sandboxed=False)
             except subprocess.TimeoutExpired as exc:
                 return CaseResult(index=case_index, status="Time Limit Exceeded", stdout="", expected=case.expectedOutput, stderr=str(exc), durationMs=int((perf_counter() - start) * 1000))
+            except FileNotFoundError as exc:
+                return CaseResult(index=case_index, status="Compilation Error", stdout="", expected=case.expectedOutput, stderr=str(exc), durationMs=int((perf_counter() - start) * 1000))
 
             if compiled.returncode != 0:
                 return CaseResult(index=case_index, status="Compilation Error", stdout=compiled.stdout.strip(), expected=case.expectedOutput, stderr=compiled.stderr.strip() or compiled.stdout.strip(), durationMs=int((perf_counter() - start) * 1000))
@@ -847,6 +892,8 @@ def judge_case(problem: ProblemPayload, language: str, code: str, case: TestCase
             executed = safe_run(run_command, cwd=tempdir, stdin=stdin_payload, sandboxed=True)
         except subprocess.TimeoutExpired as exc:
             return CaseResult(index=case_index, status="Time Limit Exceeded", stdout="", expected=case.expectedOutput, stderr=str(exc), durationMs=int((perf_counter() - start) * 1000))
+        except FileNotFoundError as exc:
+            return CaseResult(index=case_index, status="Runtime Error", stdout="", expected=case.expectedOutput, stderr=str(exc), durationMs=int((perf_counter() - start) * 1000))
 
         duration_ms = int((perf_counter() - start) * 1000)
         stdout = executed.stdout.strip()

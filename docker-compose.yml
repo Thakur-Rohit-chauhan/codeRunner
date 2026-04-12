@@ -25,6 +25,9 @@ services:
       SUBMISSION_POSTGRES_USER: ${SUBMISSION_POSTGRES_USER:-submission_user}
       SUBMISSION_POSTGRES_PASSWORD: ${SUBMISSION_POSTGRES_PASSWORD:-secure_password_change_me}
       SUBMISSION_POSTGRES_DB: ${SUBMISSION_POSTGRES_DB:-submissions_db}
+      AUTH_POSTGRES_USER: ${AUTH_POSTGRES_USER:-auth_user}
+      AUTH_POSTGRES_PASSWORD: ${AUTH_POSTGRES_PASSWORD:-auth_password}
+      AUTH_POSTGRES_DB: ${AUTH_POSTGRES_DB:-auth_db}
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./infrastructure/postgres/init:/docker-entrypoint-initdb.d:ro
@@ -39,26 +42,6 @@ services:
       - platform-network
 
   # ---------------------------------------------------
-  # Auth Service Database
-  # ---------------------------------------------------
-  auth-db:
-    image: postgres:15
-    container_name: platform-auth-db
-    environment:
-      POSTGRES_USER: user
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: authdb
-    volumes:
-      - auth_db_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U user"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    networks:
-      - platform-network
-
-  # ---------------------------------------------------
   # Auth Service
   # ---------------------------------------------------
   auth-service:
@@ -66,12 +49,38 @@ services:
       context: ./services/auth-service
     container_name: platform-auth-service
     environment:
-      DATABASE_URL: ${AUTH_DATABASE_URL:-postgresql://user:password@auth-db:5432/authdb}
+      DATABASE_URL: ${AUTH_DATABASE_URL:-postgresql+asyncpg://auth_user:auth_password@postgres:5432/auth_db}
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
+      JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
+      ACCESS_TOKEN_MINUTES: ${ACCESS_TOKEN_MINUTES:-15}
+      REFRESH_TOKEN_DAYS: ${REFRESH_TOKEN_DAYS:-30}
+      VERIFY_TOKEN_HOURS: ${VERIFY_TOKEN_HOURS:-24}
+      OAUTH_GOOGLE_CLIENT_ID: ${OAUTH_GOOGLE_CLIENT_ID:-}
+      OAUTH_GOOGLE_REDIRECT_URI: ${OAUTH_GOOGLE_REDIRECT_URI:-http://localhost:3000/oauth/callback/google}
     ports:
       - "8000:8000"
     depends_on:
-      auth-db:
+      postgres:
         condition: service_healthy
+    networks:
+      - platform-network
+    restart: unless-stopped
+
+  # ---------------------------------------------------
+  # Frontend Service (React + Vite)
+  # ---------------------------------------------------
+  frontend:
+    build:
+      context: ./services/frontend
+      dockerfile: Dockerfile
+    container_name: platform-frontend
+    environment:
+      VITE_API_GATEWAY_URL: http://nginx
+    ports:
+      - "3000:3000"
+    depends_on:
+      nginx:
+        condition: service_started
     networks:
       - platform-network
     restart: unless-stopped
@@ -298,8 +307,6 @@ services:
 
 volumes:
   postgres_data:
-    driver: local
-  auth_db_data:
     driver: local
   rabbitmq_data:
     driver: local

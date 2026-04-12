@@ -2,6 +2,10 @@ FROM python:3.12-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
+    g++ \
+    default-jdk-headless \
+    nodejs \
+    npm \
     && rm -rf /var/lib/apt/lists/*
 
 RUN groupadd --gid 1000 appuser \

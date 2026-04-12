@@ -5,7 +5,6 @@ import Editor from '@monaco-editor/react'
 import { ArrowLeft, ChevronLeft, ChevronRight, Shuffle, Play, Pause, Square, Upload, Clock, Settings, Check, X, Tag, Code2, FileText, MessageSquare, History, Maximize2, Minimize2, RotateCcw, RotateCw, Terminal, Bookmark, Star, ThumbsUp, MessageCircle, ExternalLink, Lightbulb, ChevronUp, Search, ArrowUpDown, SlidersHorizontal, User, LogOut, Palette, BarChart3, Layout, BookOpen, ChevronDown, Filter, EyeOff, Plus, Minus, Shield } from 'lucide-react'
 import useAuthStore from '../store/authStore'
 import useProblemStore from '../store/problemStore'
-import { getSeedProblemDetail } from '../utils/problemSeed'
 import { buildStarterCodeMap, getDefaultLanguageForDomain, getLanguagesForDomain, getStarterCodeForLanguage } from '../utils/compilerLanguages'
 import toast from 'react-hot-toast'
 import { buildCaseSummary, countSubmissionStatuses, getSubmissionStatusMeta, isAcceptedSubmission } from '../utils/submissionStatus'
@@ -133,7 +132,7 @@ export default function ProblemSolver() {
     const submitProblem = useProblemStore((state) => state.submitProblem)
     const toggleBookmark = useProblemStore((state) => state.toggleBookmark)
     const rawProblem = useMemo(() => {
-        return problemDetailsById[String(id)] || getSeedProblemDetail(id) || getSeedProblemDetail(1)
+        return problemDetailsById[String(id)] || null
     }, [id, problemDetailsById])
     const problem = useMemo(() => {
         const next = rawProblem || {}
@@ -182,16 +181,29 @@ export default function ProblemSolver() {
     const sidebarRef = useRef(null)
     const profileDropdownRef = useRef(null)
     const editorRef = useRef(null)
+    const initializedProblemIdRef = useRef(null)
 
-    // Reset code and test input when problem changes
+    // Initialize editor state once when backend detail for this problem ID is available.
+    // Prevents stale local/seed snippets while still avoiding resets on run/submit state updates.
     useEffect(() => {
+        if (!rawProblem || String(rawProblem.id) !== String(id)) return
+        const hasFullProblemDetail =
+            Object.prototype.hasOwnProperty.call(rawProblem, 'starterCode') ||
+            Object.prototype.hasOwnProperty.call(rawProblem, 'description') ||
+            Object.prototype.hasOwnProperty.call(rawProblem, 'examples') ||
+            Object.prototype.hasOwnProperty.call(rawProblem, 'constraints') ||
+            Object.prototype.hasOwnProperty.call(rawProblem, 'testCases')
+        if (!hasFullProblemDetail) return
+        if (initializedProblemIdRef.current === String(id)) return
+
         setLang(getDefaultLanguageForDomain(problem.domain))
         setCodes(buildStarterCodeMap(problem))
         setTestInput(problem.testCases[0]?.input || '')
         setTestResult(null)
         setDescTab('description')
         setBottomTab('testcase')
-    }, [problem])
+        initializedProblemIdRef.current = String(id)
+    }, [id, problem, rawProblem])
 
     useEffect(() => {
         fetchProblemDetail(id, user?.username)
